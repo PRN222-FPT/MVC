@@ -9,6 +9,7 @@ using MVC.Middlewares;
 using Serilog;
 using Serilog.Events;
 using ServiceLayer.Interfaces;
+using ServiceLayer.Options;
 using ServiceLayer.Services;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,23 +55,39 @@ try
         }
     });
 
-    // ----- DbContexts -----
+    // ----- DbContexts (single PostgreSQL DB via DefaultConnection) -----
+    // The connection string is a secret: it is NOT committed. Provide it locally via
+    //   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=...;Password=..."
+    // or an environment variable / deployment secret.
+    string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        throw new InvalidOperationException(
+            "ConnectionStrings:DefaultConnection is not configured. " +
+            "Set it via user-secrets or an environment variable (it is intentionally not stored in source).");
+    }
+
     // Existing Category/Product context (clean-architecture demo).
     builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+        options.UseNpgsql(connectionString));
 
     // RAG/document pipeline context (scaffolded from PostgreSQL).
     builder.Services.AddDbContext<Prn222Context>(options =>
-        options.UseNpgsql(builder.Configuration.GetConnectionString("Prn222Connection")));
+        options.UseNpgsql(connectionString));
 
     // ----- Repositories -----
     builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
     builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
 
+    // ----- Options -----
+    builder.Services.Configure<UploadOptions>(
+        builder.Configuration.GetSection(UploadOptions.SectionName));
+
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
     builder.Services.AddScoped<IProductService, ProductService>();
+    builder.Services.AddScoped<IDocumentService, DocumentService>();
 
     var app = builder.Build();
 

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,6 +8,7 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Do not fail the build for members without XML comments. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <UserSecretsId>37cd5932-817d-47e6-ab1c-8feccecb6079</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
