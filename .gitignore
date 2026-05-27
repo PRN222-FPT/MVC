@@ -43,3 +43,6 @@ Desktop.ini
 appsettings.local.json
 secrets.json
 .microsoft.dotnet.secret.json
+
+# CodeGraph and tool analysis directories
+.codegraph/
