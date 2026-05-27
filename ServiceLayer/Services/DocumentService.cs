@@ -1,21 +1,16 @@
-using DataAccessLayer;
 using DataAccessLayer.Models;
 using DataAccessLayer.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
-using ServiceLayer.Options;
 
 namespace ServiceLayer.Services;
 
 /// <summary>
-/// Default <see cref="IDocumentService"/>. Saves the uploaded file to disk, inserts a
-/// "documents" row with status "pending", and returns the new document id.
-///
-/// NOTE (Task 2): file saving is inline here. Task 3 extracts it behind IStorageService
-/// and adds background-job enqueue. Status starts as "pending"; a worker advances it later.
+/// Orchestrates an upload: save the file (IStorageService) -> insert the documents row
+/// (status "pending") -> create a queued ProcessingJob -> enqueue the id for the background
+/// worker. Returns immediately so the controller can reply 202 Accepted.
 /// </summary>
 public sealed class DocumentService : IDocumentService
 {
@@ -24,18 +19,21 @@ public sealed class DocumentService : IDocumentService
 
     private readonly IDocumentRepository _documentRepository;
     private readonly Prn222Context _context;
-    private readonly UploadOptions _options;
+    private readonly IStorageService _storage;
+    private readonly IBackgroundTaskQueue _queue;
     private readonly ILogger<DocumentService> _logger;
 
     public DocumentService(
         IDocumentRepository documentRepository,
         Prn222Context context,
-        IOptions<UploadOptions> options,
+        IStorageService storage,
+        IBackgroundTaskQueue queue,
         ILogger<DocumentService> logger)
     {
         _documentRepository = documentRepository;
         _context = context;
-        _options = options.Value;
+        _storage = storage;
+        _queue = queue;
         _logger = logger;
     }
 
@@ -51,11 +49,14 @@ public sealed class DocumentService : IDocumentService
 
         Guid chapterId = await ResolveChapterIdAsync(request.ChapterId, cancellationToken);
 
-        // Use the document id as the storage folder so files never collide.
         Guid documentId = Guid.NewGuid();
         string extension = Path.GetExtension(request.FileName);
-        string relativePath = await SaveFileAsync(documentId, request, cancellationToken);
 
+        // 1) Save the file via the storage abstraction.
+        string relativePath = await _storage.SaveAsync(
+            documentId, request.Content, request.FileName, cancellationToken);
+
+        // 2) Insert the documents row (status "pending").
         string title = string.IsNullOrWhiteSpace(request.Title)
             ? Path.GetFileNameWithoutExtension(request.FileName)
             : request.Title.Trim();
@@ -72,13 +73,25 @@ public sealed class DocumentService : IDocumentService
             Status = "pending",
             UploadedBy = request.UploadedBy
             // CreatedAt left unset — DB default (CURRENT_TIMESTAMP) fills it.
-            // Avoids Npgsql 'timestamp without time zone' vs UTC DateTime conflict.
         };
-
         await _documentRepository.CreateAsync(document);
 
+        // 3) Create a queued ProcessingJob (DB record of the pending work).
+        var job = new ProcessingJob
+        {
+            JobId = Guid.NewGuid(),
+            DocumentId = documentId,
+            JobStatus = "queued"
+            // StartedAt/FinishedAt set by the worker.
+        };
+        await _context.ProcessingJobs.AddAsync(job, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        // 4) Enqueue for the background worker.
+        await _queue.EnqueueAsync(documentId, cancellationToken);
+
         _logger.LogInformation(
-            "Document {DocumentId} stored with status pending ({FileType}, {Bytes} bytes, chapter {ChapterId})",
+            "Document {DocumentId} stored pending and enqueued ({FileType}, {Bytes} bytes, chapter {ChapterId})",
             documentId, document.FileType, request.Length, chapterId);
 
         return new UploadDocumentResult(
@@ -109,7 +122,7 @@ public sealed class DocumentService : IDocumentService
 
     /// <summary>
     /// Dev convenience: get-or-create a default Subject + "Uploads" Chapter so uploads
-    /// work without the caller knowing a chapter id. The Document FK requires a chapter.
+    /// work without the caller knowing a chapter id (the Document FK requires a chapter).
     /// </summary>
     private async Task<Guid> EnsureDefaultChapterAsync(CancellationToken cancellationToken)
     {
@@ -145,38 +158,6 @@ public sealed class DocumentService : IDocumentService
             DefaultChapterTitle, chapter.ChapterId);
 
         return chapter.ChapterId;
-    }
-
-    // -------------------------------------------------------------------------
-    // File persistence (Task 3 will extract this into IStorageService)
-    // -------------------------------------------------------------------------
-
-    private async Task<string> SaveFileAsync(
-        Guid documentId, DocumentUploadRequest request, CancellationToken cancellationToken)
-    {
-        // Strip any directory components from the client file name (path-traversal guard).
-        string safeFileName = Path.GetFileName(request.FileName);
-        if (string.IsNullOrWhiteSpace(safeFileName))
-            safeFileName = documentId.ToString();
-
-        string root = Path.IsPathRooted(_options.StorageRoot)
-            ? _options.StorageRoot
-            : Path.Combine(Directory.GetCurrentDirectory(), _options.StorageRoot);
-
-        string folder = Path.Combine(root, documentId.ToString());
-        Directory.CreateDirectory(folder);
-
-        string fullPath = Path.Combine(folder, safeFileName);
-        await using (var fileStream = new FileStream(
-            fullPath, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            if (request.Content.CanSeek)
-                request.Content.Position = 0;
-            await request.Content.CopyToAsync(fileStream, cancellationToken);
-        }
-
-        // Store a forward-slash relative path (stable across OSes) in FileUrl.
-        return $"{_options.StorageRoot}/{documentId}/{safeFileName}".Replace('\\', '/');
     }
 
     private static string NormalizeFileType(string extension) =>

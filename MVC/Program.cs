@@ -6,6 +6,7 @@ using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using MVC.Middlewares;
+using MVC.Workers;
 using Serilog;
 using Serilog.Events;
 using ServiceLayer.Interfaces;
@@ -88,6 +89,12 @@ try
     builder.Services.AddScoped<ICategoryService, CategoryService>();
     builder.Services.AddScoped<IProductService, ProductService>();
     builder.Services.AddScoped<IDocumentService, DocumentService>();
+    builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
+
+    // ----- Storage + background processing -----
+    builder.Services.AddSingleton<IStorageService, LocalStorageService>();
+    builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
+    builder.Services.AddHostedService<DocumentProcessingWorker>();
 
     var app = builder.Build();
 
