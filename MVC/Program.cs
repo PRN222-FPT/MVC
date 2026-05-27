@@ -12,7 +12,10 @@ builder.Services.AddControllersWithViews();
 
 // ----- DbContext -----
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 
 // ----- UnitOfWork -----
 builder.Services.AddScoped<IUnitOfWork, DataAccessLayer.UnitOfWork.UnitOfWork>();

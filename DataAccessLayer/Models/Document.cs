@@ -1,0 +1,35 @@
+﻿using System;
+using System.Collections.Generic;
+
+namespace DataAccessLayer.Models;
+
+public partial class Document
+{
+    public Guid DocumentId { get; set; }
+
+    public Guid ChapterId { get; set; }
+
+    public string Title { get; set; } = null!;
+
+    public string FileUrl { get; set; } = null!;
+
+    public string? FileType { get; set; }
+
+    public Guid? UploadedBy { get; set; }
+
+    public Guid? UploadedTeacher { get; set; }
+
+    public string? Status { get; set; }
+
+    public DateTime? CreatedAt { get; set; }
+
+    public virtual Chapter Chapter { get; set; } = null!;
+
+    public virtual ICollection<Chunk> Chunks { get; set; } = new List<Chunk>();
+
+    public virtual ICollection<ProcessingJob> ProcessingJobs { get; set; } = new List<ProcessingJob>();
+
+    public virtual User? UploadedByNavigation { get; set; }
+
+    public virtual Teacher? UploadedTeacherNavigation { get; set; }
+}
