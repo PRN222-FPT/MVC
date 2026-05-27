@@ -41,12 +41,17 @@ public partial class Prn222Context : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // When the context is registered through DI (AddDbContext), the connection
-        // string comes from configuration and optionsBuilder is already configured.
-        // Only fall back to the local-dev string when nothing else has configured it.
+        // At runtime the connection comes from DI (Program.cs reads it from user-secrets /
+        // environment), so optionsBuilder is already configured. This fallback only matters
+        // for design-time tooling (dotnet ef); read it from an env var so no credential is
+        // hardcoded in source.
         if (!optionsBuilder.IsConfigured)
         {
-            optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=prn222;Username=postgres;Password=123456");
+            var connectionString = Environment.GetEnvironmentVariable("PRN222_CONNECTION");
+            if (!string.IsNullOrWhiteSpace(connectionString))
+            {
+                optionsBuilder.UseNpgsql(connectionString);
+            }
         }
     }
 
