@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,7 +46,7 @@ public partial class Prn222Context : DbContext
         // Only fall back to the local-dev string when nothing else has configured it.
         if (!optionsBuilder.IsConfigured)
         {
-            optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=prn222;Username=postgres;Password=123456");
+            optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=prn222;Username=postgres;Password=<YOUR_LOCAL_PASSWORD>");
         }
     }
 
