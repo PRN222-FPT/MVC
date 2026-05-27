@@ -1,49 +1,126 @@
+using System.Reflection;
 using DataAccessLayer;
+using DataAccessLayer.Models;
+using DataAccessLayer.Repositories;
 using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using MVC.Middlewares;
+using Serilog;
+using Serilog.Events;
 using ServiceLayer.Interfaces;
 using ServiceLayer.Services;
 
-var builder = WebApplication.CreateBuilder(args);
+// ─────────────────────────────────────────────────────────────────────────────
+//  Bootstrap Serilog first so any startup failure is logged to the console.
+// ─────────────────────────────────────────────────────────────────────────────
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console()
+    .CreateLogger();
 
-// Add services to the container.
-builder.Services.AddControllersWithViews();
-
-// ----- DbContext -----
-builder.Services.AddDbContext<AppDbContext>(options =>
+try
 {
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection"));
-});
+    Log.Information("Starting MVC host");
 
-// ----- UnitOfWork -----
-builder.Services.AddScoped<IUnitOfWork, DataAccessLayer.UnitOfWork.UnitOfWork>();
+    var builder = WebApplication.CreateBuilder(args);
 
-// ----- Services -----
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddScoped<IProductService, ProductService>();
+    // ----- Logging: route all ASP.NET Core logging through Serilog -----
+    builder.Host.UseSerilog();
 
-var app = builder.Build();
+    // ----- MVC + API controllers -----
+    builder.Services.AddControllersWithViews();
 
-// Configure the HTTP request pipeline.
-app.UseGlobalExceptionHandler();
+    // ----- Swagger / OpenAPI -----
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddSwaggerGen(options =>
+    {
+        options.SwaggerDoc("v1", new OpenApiInfo
+        {
+            Title = "RAG Document Ingestion API",
+            Version = "v1",
+            Description = "Endpoints for uploading and tracking documents in the RAG pipeline."
+        });
 
-if (!app.Environment.IsDevelopment())
+        // Pull XML summaries from controllers/actions into the Swagger UI.
+        var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        if (File.Exists(xmlPath))
+        {
+            options.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+        }
+    });
+
+    // ----- DbContexts -----
+    // Existing Category/Product context (clean-architecture demo).
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+    // RAG/document pipeline context (scaffolded from PostgreSQL).
+    builder.Services.AddDbContext<Prn222Context>(options =>
+        options.UseNpgsql(builder.Configuration.GetConnectionString("Prn222Connection")));
+
+    // ----- Repositories -----
+    builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+    builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+    builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
+
+    // ----- Domain services -----
+    builder.Services.AddScoped<ICategoryService, CategoryService>();
+    builder.Services.AddScoped<IProductService, ProductService>();
+
+    var app = builder.Build();
+
+    // ----- HTTP pipeline -----
+    app.UseGlobalExceptionHandler();
+
+    // Structured request logging (method, path, status, elapsed).
+    app.UseSerilogRequestLogging();
+
+    if (app.Environment.IsDevelopment())
+    {
+        // Swagger UI available at /swagger.
+        app.UseSwagger();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/swagger/v1/swagger.json", "RAG Document Ingestion API v1");
+            options.RoutePrefix = "swagger";
+        });
+    }
+    else
+    {
+        app.UseHsts();
+    }
+
+    app.UseHttpsRedirection();
+    app.UseRouting();
+
+    app.UseAuthorization();
+
+    app.MapStaticAssets();
+
+    // Attribute-routed API controllers (e.g. DocumentController).
+    app.MapControllers();
+
+    // Conventional MVC routing for view-based controllers.
+    app.MapControllerRoute(
+        name: "default",
+        pattern: "{controller=Home}/{action=Index}/{id?}")
+        .WithStaticAssets();
+
+    app.Run();
+}
+catch (Exception ex)
 {
-    app.UseHsts();
+    Log.Fatal(ex, "MVC host terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
 }
 
-app.UseHttpsRedirection();
-app.UseRouting();
-
-app.UseAuthorization();
-
-app.MapStaticAssets();
-
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}")
-    .WithStaticAssets();
-
-app.Run();
+// Exposed for WebApplicationFactory-based integration tests.
+public partial class Program { }
