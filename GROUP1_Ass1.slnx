@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="DataAccessLayer/DataAccessLayer.csproj" Id="87df4573-dfd2-4a9c-8e77-e76bf6c0637b" />
+  <Project Path="MVC/MVC.csproj" />
+  <Project Path="ServiceLayer/ServiceLayer.csproj" Id="5a292397-0df2-430b-b302-d64b7be5cd53" />
+</Solution>
