@@ -1,56 +1,202 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - MVC</title>
-    <script type="importmap"></script>
-    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
-    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/MVC.styles.css" asp-append-version="true" />
+    <title>@ViewData["Title"] - DocAssistant AI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --sidebar-width: 280px;
+            --surface-bg: #f8f9ff;
+            --border-color: #dee2f1;
+            --primary-blue: #2563eb;
+            --text-main: #1a1c1e;
+        }
+
+        body {
+            background-color: var(--surface-bg);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            position: fixed;
+            left: 0;
+            top: 0;
+            background: white;
+            border-right: 1px solid var(--border-color);
+            z-index: 1050;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .nav-link {
+            color: #64748b;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background-color: #f1f5f9;
+            color: var(--primary-blue);
+        }
+
+        .nav-link.active {
+            background-color: #eff6ff;
+            color: var(--primary-blue);
+            font-weight: 700;
+        }
+
+        .main-wrapper {
+            margin-left: var(--sidebar-width);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .top-navbar {
+            height: 64px;
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 1040;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 2rem;
+        }
+
+        .search-container {
+            position: relative;
+            width: 384px;
+        }
+
+        .search-container .material-icons {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 20px;
+        }
+
+        .search-input {
+            padding-left: 40px;
+            background-color: #f1f5f9;
+            border: none;
+            border-radius: 99px;
+            font-size: 0.875rem;
+        }
+
+        .search-input:focus {
+            background-color: #f1f5f9;
+            box-shadow: 0 0 0 2px var(--primary-blue);
+        }
+
+        .btn-new-analysis {
+            background-color: var(--primary-blue);
+            color: white;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            font-weight: 700;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            border: none;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+
+        .btn-new-analysis:hover {
+            background-color: #1d4ed8;
+            color: white;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
-            <div class="container-fluid">
-                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">MVC</a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Category" asp-action="Index">Categories</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Product" asp-action="Index">Products</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
-                        </li>
-                    </ul>
+    <aside class="sidebar p-3">
+        <div class="px-3 py-4">
+            <div class="d-flex align-items-center gap-3">
+                <span class="material-icons text-primary fs-3">description</span>
+                <div>
+                    <h1 class="h6 mb-0 fw-bold">DocAssistant AI</h1>
+                    <p class="text-secondary fw-bold text-uppercase m-0" style="font-size: 10px; tracking: 0.05em;">ENTERPRISE PLAN</p>
                 </div>
             </div>
+        </div>
+
+        <nav class="flex-grow-1 px-2 mt-2">
+            <a asp-controller="Document" asp-action="Upload" class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Upload" ? "active" : "")">
+                <span class="material-icons">upload_file</span> Upload
+            </a>
+            <a asp-controller="Document" asp-action="Library" class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Library" ? "active" : "")">
+                <span class="material-icons">library_books</span> Library
+            </a>
+            <a asp-controller="Chat" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")">
+                <span class="material-icons">forum</span> Chat
+            </a>
+            <a href="#" class="nav-link">
+                <span class="material-icons">settings</span> Settings
+            </a>
         </nav>
-    </header>
-    <div class="container">
-        <main role="main" class="pb-3">
+
+        <div class="p-2 border-top">
+            @if (ViewContext.RouteData.Values["controller"]?.ToString() == "Chat")
+            {
+                <button class="btn-new-analysis mb-3">
+                    <span class="material-icons">add</span> New Analysis
+                </button>
+            }
+            <a href="#" class="nav-link text-secondary">
+                <span class="material-icons">help_outline</span> Help Center
+            </a>
+            <a asp-controller="Account" asp-action="Logout" class="nav-link text-secondary">
+                <span class="material-icons">logout</span> Logout
+            </a>
+        </div>
+    </aside>
+
+    <div class="main-wrapper">
+        <header class="top-navbar">
+            <div class="search-container">
+                <span class="material-icons">search</span>
+                <input type="text" placeholder="Search documents..." class="form-control search-input" />
+            </div>
+            <div class="d-flex align-items-center gap-4">
+                <button class="btn btn-link p-0 text-secondary border-0"><span class="material-icons">notifications</span></button>
+                <button class="btn btn-link p-0 text-secondary border-0"><span class="material-icons">history</span></button>
+                <div class="d-flex align-items-center gap-3 ps-4 border-start border-light">
+                    <span class="small fw-medium">Support</span>
+                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="rounded-circle bg-primary-subtle" style="width: 32px; height: 32px;" />
+                </div>
+            </div>
+        </header>
+
+        <main class="p-4 p-lg-5">
             @RenderBody()
         </main>
     </div>
 
-    <footer class="border-top footer text-muted">
-        <div class="container">
-            &copy; 2026 - MVC - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
-        </div>
-    </footer>
-    <script src="~/lib/jquery/dist/jquery.min.js"></script>
-    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/site.js" asp-append-version="true"></script>
-    @await RenderSectionAsync("Scripts", required: false)
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    @RenderSection("Scripts", required: false)
 </body>
 </html>
