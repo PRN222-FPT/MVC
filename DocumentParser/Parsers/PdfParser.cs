@@ -48,11 +48,37 @@ public sealed class PdfParser
         if (!File.Exists(filePath))
             throw new FileNotFoundException("PDF file not found.", filePath);
 
+        byte[] pdfBytes = File.ReadAllBytes(filePath);
+        return Parse(pdfBytes, Path.GetFileName(filePath));
+    }
+
+    /// <summary>
+    /// Parses every page of the PDF from a <see cref="Stream"/> and returns
+    /// a <see cref="ParseResult"/>.
+    /// </summary>
+    public ParseResult Parse(Stream stream, string sourceFile = "unknown.pdf")
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        using var ms = new MemoryStream();
+        if (stream.CanSeek)
+            stream.Position = 0;
+        stream.CopyTo(ms);
+        byte[] pdfBytes = ms.ToArray();
+
+        return Parse(pdfBytes, sourceFile);
+    }
+
+    /// <summary>
+    /// Parses every page of the PDF from a byte array and returns
+    /// a <see cref="ParseResult"/>.
+    /// </summary>
+    public ParseResult Parse(byte[] pdfBytes, string sourceFile)
+    {
+        ArgumentNullException.ThrowIfNull(pdfBytes);
+
         var warnings = new List<string>();
         var pages = new List<ParsedPage>();
-
-        // Read bytes once: shared by iText7 (text layer) and the rasterizer (OCR fallback).
-        byte[] pdfBytes = File.ReadAllBytes(filePath);
 
         using var reader = new PdfReader(new MemoryStream(pdfBytes));
         using var pdfDoc = new PdfDocument(reader);
@@ -98,7 +124,7 @@ public sealed class PdfParser
 
         return new ParseResult
         {
-            SourceFile = Path.GetFileName(filePath),
+            SourceFile = sourceFile,
             Format = DetermineFormat(pages),
             Pages = pages,
             Warnings = warnings

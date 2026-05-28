@@ -84,12 +84,17 @@ try
     // ----- Options -----
     builder.Services.Configure<UploadOptions>(
         builder.Configuration.GetSection(UploadOptions.SectionName));
+    builder.Services.Configure<ChunkingOptions>(
+        builder.Configuration.GetSection(ChunkingOptions.SectionName));
+    builder.Services.Configure<OcrOptions>(
+        builder.Configuration.GetSection(OcrOptions.SectionName));
 
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
     builder.Services.AddScoped<IProductService, ProductService>();
     builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
+    builder.Services.AddScoped<IRecursiveChunkingService, RecursiveChunkingService>();
 
     // ----- Storage + background processing -----
     builder.Services.AddSingleton<IStorageService, LocalStorageService>();

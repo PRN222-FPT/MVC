@@ -3,4 +3,5 @@
   <Project Path="DocumentParser/DocumentParser.csproj" />
   <Project Path="MVC/MVC.csproj" />
   <Project Path="ServiceLayer/ServiceLayer.csproj" Id="5a292397-0df2-430b-b302-d64b7be5cd53" />
+  <Project Path="Test/Test.csproj" />
 </Solution>
