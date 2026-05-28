@@ -114,32 +114,16 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 }
             }
 
-            // 5. Chunk page-by-page (Option 2)
-            var newChunks = new List<Chunk>();
-            int chunkIndex = 0;
-
-            foreach (var page in pages)
+            // 5. Chunk page-by-page (Option 2) returning ChunkDto
+            var chunkDtos = _chunkingService.ChunkDocument(pages);
+            var newChunks = chunkDtos.Select(dto => new Chunk
             {
-                if (page.IsEmpty || string.IsNullOrWhiteSpace(page.Text))
-                {
-                    continue;
-                }
-
-                var pageChunks = _chunkingService.SplitText(page.Text);
-                foreach (var chunkText in pageChunks)
-                {
-                    string formattedContent = $"[Trang {page.PageNumber}]\n{chunkText}";
-
-                    newChunks.Add(new Chunk
-                    {
-                        ChunkId = Guid.NewGuid(),
-                        DocumentId = documentId,
-                        ChunkIndex = chunkIndex++,
-                        Content = formattedContent,
-                        CreatedAt = UnspecifiedNow()
-                    });
-                }
-            }
+                ChunkId = Guid.NewGuid(),
+                DocumentId = documentId,
+                ChunkIndex = dto.ChunkIndex,
+                Content = dto.Content,
+                CreatedAt = UnspecifiedNow()
+            }).ToList();
 
             // 6. Bulk Delete old chunks and Insert new chunks atomically
             var existingChunks = _context.Chunks.Where(c => c.DocumentId == documentId);

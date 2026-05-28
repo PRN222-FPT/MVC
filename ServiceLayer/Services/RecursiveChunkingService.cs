@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using DocumentParser.Models;
 using Microsoft.Extensions.Options;
+using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
 using ServiceLayer.Options;
 
@@ -18,6 +20,37 @@ public sealed class RecursiveChunkingService : IRecursiveChunkingService
     public RecursiveChunkingService(IOptions<ChunkingOptions> options)
     {
         _options = options.Value;
+    }
+
+    public IReadOnlyList<ChunkDto> ChunkDocument(
+        IReadOnlyList<ParsedPage> pages,
+        int? chunkSize = null,
+        int? chunkOverlap = null)
+    {
+        if (pages == null || pages.Count == 0)
+        {
+            return Array.Empty<ChunkDto>();
+        }
+
+        var chunkDtos = new List<ChunkDto>();
+        int chunkIndex = 0;
+
+        foreach (var page in pages)
+        {
+            if (page.IsEmpty || string.IsNullOrWhiteSpace(page.Text))
+            {
+                continue;
+            }
+
+            var pageChunks = SplitText(page.Text, chunkSize, chunkOverlap);
+            foreach (var chunkText in pageChunks)
+            {
+                string formattedContent = $"[Trang {page.PageNumber}]\n{chunkText}";
+                chunkDtos.Add(new ChunkDto(page.PageNumber, chunkIndex++, formattedContent));
+            }
+        }
+
+        return chunkDtos;
     }
 
     public IReadOnlyList<string> SplitText(string text, int? chunkSize = null, int? chunkOverlap = null)
