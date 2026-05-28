@@ -38,3 +38,12 @@ public sealed record UploadDocumentResult(
     string FileType,
     string FileUrl
 );
+
+/// <summary>
+/// Represents a structured chunk of document text.
+/// </summary>
+public sealed record ChunkDto(
+    int PageNumber,
+    int ChunkIndex,
+    string Content
+);

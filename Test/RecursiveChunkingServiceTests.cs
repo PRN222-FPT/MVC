@@ -124,4 +124,33 @@ public class RecursiveChunkingServiceTests
         Assert.NotEmpty(chunks);
         Assert.All(chunks, c => Assert.True(c.Length <= 10));
     }
+
+    [Fact]
+    public void ChunkDocument_MultiplePages_ReturnsStructuredChunkDtos()
+    {
+        // Arrange
+        var service = CreateService(chunkSize: 50, chunkOverlap: 10);
+        var pages = new List<DocumentParser.Models.ParsedPage>
+        {
+            new DocumentParser.Models.ParsedPage(1, "Page one content. Very interesting text.", IsEmpty: false),
+            new DocumentParser.Models.ParsedPage(2, "Page two content. Even more interesting.", IsEmpty: false)
+        };
+
+        // Act
+        var chunkDtos = service.ChunkDocument(pages);
+
+        // Assert
+        Assert.NotEmpty(chunkDtos);
+        Assert.All(chunkDtos, dto => {
+            Assert.True(dto.PageNumber == 1 || dto.PageNumber == 2);
+            Assert.Contains($"[Trang {dto.PageNumber}]", dto.Content);
+            Assert.True(dto.ChunkIndex >= 0);
+        });
+
+        // Indexes should be sequential (0, 1, 2...)
+        for (int i = 0; i < chunkDtos.Count; i++)
+        {
+            Assert.Equal(i, chunkDtos[i].ChunkIndex);
+        }
+    }
 }
