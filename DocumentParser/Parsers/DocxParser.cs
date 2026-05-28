@@ -33,10 +33,25 @@ public sealed class DocxParser
         if (!File.Exists(filePath))
             throw new FileNotFoundException("DOCX file not found.", filePath);
 
+        using var wordDoc = WordprocessingDocument.Open(filePath, isEditable: false);
+        return ParseDocument(wordDoc, Path.GetFileName(filePath));
+    }
+
+    /// <summary>
+    /// Parses the DOCX from a <see cref="Stream"/> and returns a <see cref="ParseResult"/>.
+    /// </summary>
+    public ParseResult Parse(Stream stream, string sourceFile = "unknown.docx")
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        using var wordDoc = WordprocessingDocument.Open(stream, isEditable: false);
+        return ParseDocument(wordDoc, sourceFile);
+    }
+
+    private ParseResult ParseDocument(WordprocessingDocument wordDoc, string sourceFile)
+    {
         var warnings = new List<string>();
         var pages = new List<ParsedPage>();
-
-        using var wordDoc = WordprocessingDocument.Open(filePath, isEditable: false);
 
         var body = wordDoc.MainDocumentPart?.Document?.Body
             ?? throw new InvalidOperationException("DOCX body is null — file may be corrupt.");
@@ -78,7 +93,7 @@ public sealed class DocxParser
 
         return new ParseResult
         {
-            SourceFile = Path.GetFileName(filePath),
+            SourceFile = sourceFile,
             Format = "DOCX",
             Pages = pages,
             Warnings = warnings

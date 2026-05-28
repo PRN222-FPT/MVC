@@ -10,6 +10,14 @@ can be used as document parsing backends in the GROUP1_Ass1 project.
 | `itext7` | 9.1.0 | **AGPL-3.0** | Parse text-layer PDFs, track page numbers |
 | `itext7.bouncy-castle-adapter` | 9.1.0 | AGPL-3.0 | Required cryptography backend for iText7 9.x |
 | `DocumentFormat.OpenXml` | 3.3.0 | MIT | Parse DOCX files, extract structured text |
+| `Tesseract` | 5.2.0 | Apache-2.0 | OCR fallback for image-based / scanned PDFs |
+| `PDFtoImage` | 5.2.1 | MIT | Rasterize PDF page → PNG (iText7 can't render) for OCR |
+
+### OCR language data (`tessdata/`)
+
+`eng.traineddata` + `vie.traineddata` from the [`tessdata_fast`](https://github.com/tesseract-ocr/tessdata_fast)
+repo are checked into `tessdata/` and copied to the output directory at build.
+To add a language, drop its `<lang>.traineddata` into `tessdata/` and pass `"<lang>+eng"` to `TesseractOcrEngine`.
 
 > ⚠️ **iText7 License**: Community edition is AGPL-3.0. Any closed-source application that
 > distributes iText7 **must** purchase a commercial iText license or use an alternative
@@ -42,15 +50,37 @@ dotnet run --project DocumentParser/DocumentParser.csproj -c Release
 
 ## Parsing with Your Own Files
 
+Single-file mode prints the **full** extracted text per page (with source tag) plus a verdict:
+
 ```bash
-# Drop your files into DocumentParser/SampleFiles/ and edit Program.cs
-# to point to them, or modify the pdfFiles array:
-var pdfFiles = new[]
-{
-    "path/to/your/file.pdf",
-    ...
-};
+dotnet run -- "C:\path\to\your\file.pdf"     # or .docx
 ```
+
+Or edit the `pdfFiles` array in `Program.cs` for the batch demo.
+
+## OCR (scanned / image-based PDFs)
+
+`PdfParser` extracts the embedded text layer first. If a page has **no** text layer and an
+`IOcrEngine` is supplied, it rasterizes that page to a 300-DPI PNG and runs Tesseract OCR.
+
+```csharp
+using var ocr = new TesseractOcrEngine(
+    tessdataPath: Path.Combine(AppContext.BaseDirectory, "tessdata"),
+    languages: "vie+eng");
+
+var parser = new PdfParser(ocr);          // pass null to disable OCR
+ParseResult result = parser.Parse("scan.pdf");
+
+foreach (var page in result.Pages)
+{
+    // page.Source: TextLayer | Ocr | None
+    Console.WriteLine($"Page {page.PageNumber} [{page.Source}]: {page.Text}");
+}
+```
+
+> ⚠️ OCR text is **lower-confidence** than a real text layer. Pages recovered via OCR are
+> tagged `ParsedPage.Source == TextSource.Ocr` and flagged in `ParseResult.Warnings` —
+> useful for a RAG pipeline that wants to mark OCR'd chunks as less reliable.
 
 ## Page Number Tracking
 
@@ -68,7 +98,8 @@ Documents without explicit breaks are returned as **a single page**.
 ### PDF
 | Issue | Impact | Workaround |
 |-------|--------|------------|
-| Scanned pages (image-only) | Empty string returned | Add Tesseract.NET for OCR |
+| Scanned pages (image-only) | ✅ Handled via Tesseract OCR fallback | Lower-confidence text; raise DPI for small fonts |
+| OCR accuracy | Recognition errors on poor scans | Use `tessdata_best`, higher DPI, image pre-processing |
 | Multi-column / RTL layouts | Text order may be wrong | Use `LocationTextExtractionStrategy` |
 | Type3 / CID embedded fonts | Garbled characters | Pre-process font mapping |
 | AcroForm fields | Not extracted | Use `PdfAcroForm.GetAllFormFields()` |
@@ -90,14 +121,19 @@ Documents without explicit breaks are returned as **a single page**.
 ```
 DocumentParser/
 ├── Models/
-│   └── ParsedPage.cs          ParsedPage record + ParseResult aggregate
+│   └── ParsedPage.cs          ParsedPage record (+ TextSource) + ParseResult aggregate
 ├── Parsers/
-│   ├── PdfParser.cs           iText7 — page-by-page text extraction
+│   ├── PdfParser.cs           iText7 text extraction + OCR fallback for empty pages
 │   └── DocxParser.cs          Open XML SDK — paragraph/table walk + page break detection
+├── Ocr/
+│   ├── IOcrEngine.cs          OCR abstraction (swap engines without touching PdfParser)
+│   ├── TesseractOcrEngine.cs  Tesseract implementation (vie+eng)
+│   └── PdfPageRasterizer.cs   PDF page → PNG via PDFtoImage (PDFium), for OCR input
 ├── Generators/
 │   ├── PdfSampleGenerator.cs  Creates 3 sample PDFs (iText7 usings only)
 │   ├── DocxSampleGenerator.cs Creates sample DOCX (Open XML SDK usings only)
 │   └── SampleFileGenerator.cs Thin coordinator (no ambiguous usings)
+├── tessdata/                  OCR language data (eng + vie), copied to output
 └── Program.cs                 Entry point — generate → parse → log → summarize
 ```
 
