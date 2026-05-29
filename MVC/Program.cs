@@ -137,7 +137,7 @@ try
     // Conventional MVC routing for view-based controllers.
     app.MapControllerRoute(
         name: "default",
-        pattern: "{controller=Home}/{action=Index}/{id?}")
+        pattern: "{controller=Account}/{action=Login}/{id?}")
         .WithStaticAssets();
 
     app.Run();
@@ -150,6 +150,7 @@ finally
 {
     Log.CloseAndFlush();
 }
+
 
 // Exposed for WebApplicationFactory-based integration tests.
 public partial class Program { }

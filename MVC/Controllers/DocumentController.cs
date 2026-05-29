@@ -13,7 +13,7 @@ namespace MVC.Controllers;
 [ApiController]
 [Route("Documents")]
 [Produces("application/json")]
-public class DocumentController : ControllerBase
+public class DocumentController : Controller
 {
     private readonly IDocumentService _documentService;
     private readonly UploadOptions _uploadOptions;
@@ -27,6 +27,24 @@ public class DocumentController : ControllerBase
         _documentService = documentService;
         _uploadOptions = uploadOptions.Value;
         _logger = logger;
+    }
+    // ===== UI ROUTES =====
+    [HttpGet]
+    public IActionResult Index()
+    {
+        return View();
+    }
+
+    [HttpGet("Library")]
+    public IActionResult Library()
+    {
+        return View();
+    }
+
+    [HttpGet("UploadPage")]
+    public IActionResult UploadPage()
+    {
+        return View("Upload");
     }
 
     /// <summary>
