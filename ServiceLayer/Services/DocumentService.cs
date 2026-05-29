@@ -8,9 +8,8 @@ using ServiceLayer.Interfaces;
 namespace ServiceLayer.Services;
 
 /// <summary>
-/// Orchestrates an upload: save the file (IStorageService) -> insert the documents row
-/// (status "pending") -> create a queued ProcessingJob -> enqueue the id for the background
-/// worker. Returns immediately so the controller can reply 202 Accepted.
+/// Orchestrates an upload: save the file, insert the document row, parse the document,
+/// chunk extracted text, and persist chunks before returning to the MVC boundary.
 /// </summary>
 public sealed class DocumentService : IDocumentService
 {
@@ -20,21 +19,38 @@ public sealed class DocumentService : IDocumentService
     private readonly IDocumentRepository _documentRepository;
     private readonly Prn222Context _context;
     private readonly IStorageService _storage;
-    private readonly IBackgroundTaskQueue _queue;
+    private readonly IDocumentProcessor _documentProcessor;
     private readonly ILogger<DocumentService> _logger;
 
     public DocumentService(
         IDocumentRepository documentRepository,
         Prn222Context context,
         IStorageService storage,
-        IBackgroundTaskQueue queue,
+        IDocumentProcessor documentProcessor,
         ILogger<DocumentService> logger)
     {
         _documentRepository = documentRepository;
         _context = context;
         _storage = storage;
-        _queue = queue;
+        _documentProcessor = documentProcessor;
         _logger = logger;
+    }
+
+    public async Task<IReadOnlyList<DocumentListItemDto>> GetDocumentsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _documentRepository.Query()
+            .AsNoTracking()
+            .OrderByDescending(document => document.CreatedAt)
+            .ThenBy(document => document.Title)
+            .Select(document => new DocumentListItemDto(
+                document.DocumentId,
+                document.Title,
+                document.FileType ?? "unknown",
+                document.Status ?? "pending",
+                document.CreatedAt,
+                document.FileUrl))
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<UploadDocumentResult> InitiateUploadAsync(
@@ -56,7 +72,7 @@ public sealed class DocumentService : IDocumentService
         string relativePath = await _storage.SaveAsync(
             documentId, request.Content, request.FileName, cancellationToken);
 
-        // 2) Insert the documents row (status "pending").
+        // 2) Insert the documents row. The processor updates the status to processed/failed.
         string title = string.IsNullOrWhiteSpace(request.Title)
             ? Path.GetFileNameWithoutExtension(request.FileName)
             : request.Title.Trim();
@@ -76,30 +92,46 @@ public sealed class DocumentService : IDocumentService
         };
         await _documentRepository.CreateAsync(document);
 
-        // 3) Create a queued ProcessingJob (DB record of the pending work).
+        // 3) Create a ProcessingJob record for auditability, then run ingestion immediately.
         var job = new ProcessingJob
         {
             JobId = Guid.NewGuid(),
             DocumentId = documentId,
             JobStatus = "queued"
-            // StartedAt/FinishedAt set by the worker.
+            // StartedAt/FinishedAt set by the processor.
         };
         await _context.ProcessingJobs.AddAsync(job, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
-        // 4) Enqueue for the background worker.
-        await _queue.EnqueueAsync(documentId, cancellationToken);
+        // 4) Detect parser by normalized file type, parse, chunk, and save chunks.
+        await _documentProcessor.ProcessAsync(documentId, cancellationToken);
+
+        Document? processedDocument = await _context.Documents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.DocumentId == documentId, cancellationToken);
+        string finalStatus = processedDocument?.Status ?? "failed";
+        int chunkCount = await _context.Chunks
+            .AsNoTracking()
+            .CountAsync(c => c.DocumentId == documentId, cancellationToken);
+        string? processingError = await _context.ProcessingJobs
+            .AsNoTracking()
+            .Where(j => j.DocumentId == documentId)
+            .OrderByDescending(j => j.StartedAt)
+            .Select(j => j.ErrorMessage)
+            .FirstOrDefaultAsync(cancellationToken);
 
         _logger.LogInformation(
-            "Document {DocumentId} stored pending and enqueued ({FileType}, {Bytes} bytes, chapter {ChapterId})",
-            documentId, document.FileType, request.Length, chapterId);
+            "Document {DocumentId} uploaded and ingested with status {Status} ({FileType}, {Bytes} bytes, {ChunkCount} chunks, chapter {ChapterId})",
+            documentId, finalStatus, document.FileType, request.Length, chunkCount, chapterId);
 
         return new UploadDocumentResult(
             documentId,
             title,
-            document.Status,
+            finalStatus,
             document.FileType ?? "unknown",
-            relativePath);
+            relativePath,
+            chunkCount,
+            processingError);
     }
 
     // -------------------------------------------------------------------------

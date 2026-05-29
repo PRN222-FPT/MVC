@@ -154,6 +154,12 @@
             <a asp-controller="Chat" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")">
                 <span class="material-icons">forum</span> Chat
             </a>
+            @if (User.IsInRole("admin"))
+            {
+                <a asp-controller="AdminUsers" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "AdminUsers" ? "active" : "")">
+                    <span class="material-icons">admin_panel_settings</span> Users
+                </a>
+            }
             <a href="#" class="nav-link">
                 <span class="material-icons">settings</span> Settings
             </a>
@@ -169,9 +175,12 @@
             <a href="#" class="nav-link text-secondary">
                 <span class="material-icons">help_outline</span> Help Center
             </a>
-            <a asp-controller="Account" asp-action="Logout" class="nav-link text-secondary">
-                <span class="material-icons">logout</span> Logout
-            </a>
+            <form asp-controller="Account" asp-action="Logout" method="post">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="nav-link text-secondary border-0 bg-transparent w-100 text-start">
+                    <span class="material-icons">logout</span> Logout
+                </button>
+            </form>
         </div>
     </aside>
 

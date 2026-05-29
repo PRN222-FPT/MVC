@@ -125,6 +125,12 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 CreatedAt = UnspecifiedNow()
             }).ToList();
 
+            if (newChunks.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "No extractable text was found in the document, so no chunks could be created.");
+            }
+
             // 6. Bulk Delete old chunks and Insert new chunks atomically
             var existingChunks = _context.Chunks.Where(c => c.DocumentId == documentId);
             _context.Chunks.RemoveRange(existingChunks);

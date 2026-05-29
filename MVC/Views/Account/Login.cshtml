@@ -1,3 +1,5 @@
+@model MVC.ViewModels.LoginViewModel
+
 @{
     Layout = "_LoginLayout";
     ViewData["Title"] = "Login";
@@ -15,14 +17,21 @@
                 <p class="text-secondary small">Please enter your details to access your documents.</p>
             </div>
 
-            <form>
+            <form asp-action="Login" method="post">
+                @Html.AntiForgeryToken()
+                <input asp-for="ReturnUrl" type="hidden" />
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
                 <div class="mb-3">
-                    <label class="form-label small fw-bold text-secondary">Email Address</label>
-                    <input type="email" class="form-control form-control-lg bg-light border-0 fs-6" placeholder="name@company.com" required>
+                    <label asp-for="Email" class="form-label small fw-bold text-secondary">Email Address</label>
+                    <input asp-for="Email" class="form-control form-control-lg bg-light border-0 fs-6" placeholder="name@company.com" autocomplete="username" />
+                    <span asp-validation-for="Email" class="text-danger small"></span>
                 </div>
+
                 <div class="mb-4">
-                    <label class="form-label small fw-bold text-secondary mb-0">Password</label>
-                    <input type="password" class="form-control form-control-lg bg-light border-0 fs-6" placeholder="••••••••" required>
+                    <label asp-for="Password" class="form-label small fw-bold text-secondary mb-0">Password</label>
+                    <input asp-for="Password" class="form-control form-control-lg bg-light border-0 fs-6" placeholder="••••••••" autocomplete="current-password" />
+                    <span asp-validation-for="Password" class="text-danger small"></span>
                 </div>
 
                 <button type="submit" class="btn btn-primary w-100 py-2 fw-bold shadow-sm">Sign In</button>
@@ -30,3 +39,7 @@
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}
