@@ -1,3 +1,5 @@
+@model MVC.ViewModels.DocumentLibraryViewModel
+
 @{
     ViewData["Title"] = "Document Library";
 }
@@ -12,38 +14,66 @@
     </a>
 </div>
 
+@if (TempData["Success"] is string success)
+{
+    <div class="alert alert-success">@success</div>
+}
+@if (TempData["Error"] is string error)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
 <div class="card border-light shadow-sm rounded-4 overflow-hidden">
     <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="bg-light">
-                    <tr>
-                        <th class="ps-4 py-3 text-uppercase text-secondary small fw-bold" style="width: 40%;">File Name</th>
-                        <th class="py-3 text-uppercase text-secondary small fw-bold">Type</th>
-                        <th class="py-3 text-uppercase text-secondary small fw-bold">Date Uploaded</th>
-                        <th class="py-3 text-uppercase text-secondary small fw-bold">Status</th>
-                        <th class="pe-4 py-3 text-uppercase text-secondary small fw-bold text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="border-top-0">
-                    <tr>
-                        <td class="ps-4 py-3">
-                            <div class="d-flex align-items-center gap-3">
-                                <span class="material-icons text-danger opacity-75">picture_as_pdf</span>
-                                <span class="fw-medium">Q3_Financial_Report_Final.pdf</span>
-                            </div>
-                        </td>
-                        <td class="py-3 text-secondary small">PDF Document</td>
-                        <td class="py-3 text-secondary small">Oct 24, 2023</td>
-                        <td class="py-3">
-                            <span class="status-badge bg-primary-subtle text-primary">Ready</span>
-                        </td>
-                        <td class="pe-4 py-3 text-end">
-                            <button class="btn btn-link p-0 text-secondary border-0"><span class="material-icons">more_vert</span></button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+        @if (Model.Documents.Count == 0)
+        {
+            <div class="p-5 text-center">
+                <span class="material-icons text-primary mb-3" style="font-size: 48px;">folder_open</span>
+                <h3 class="h5 fw-bold">No documents yet</h3>
+                <p class="text-secondary mb-4">Upload a PDF or DOCX document to start processing it for AI analysis.</p>
+                <a asp-action="Upload" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+                    <span class="material-icons">cloud_upload</span> Upload Document
+                </a>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4 py-3 text-uppercase text-secondary small fw-bold" style="width: 40%;">File Name</th>
+                            <th class="py-3 text-uppercase text-secondary small fw-bold">Type</th>
+                            <th class="py-3 text-uppercase text-secondary small fw-bold">Date Uploaded</th>
+                            <th class="py-3 text-uppercase text-secondary small fw-bold">Status</th>
+                            <th class="pe-4 py-3 text-uppercase text-secondary small fw-bold text-end">Document Id</th>
+                        </tr>
+                    </thead>
+                    <tbody class="border-top-0">
+                        @foreach (var document in Model.Documents)
+                        {
+                            <tr>
+                                <td class="ps-4 py-3">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <span class="material-icons @document.IconClass opacity-75">@document.IconName</span>
+                                        <span class="fw-medium">@document.Title</span>
+                                    </div>
+                                </td>
+                                <td class="py-3 text-secondary small">@document.TypeLabel</td>
+                                <td class="py-3 text-secondary small">
+                                    @(document.CreatedAt?.ToString("MMM d, yyyy HH:mm") ?? "Pending")
+                                </td>
+                                <td class="py-3">
+                                    <span class="status-badge @document.StatusBadgeClass text-capitalize">@document.Status</span>
+                                </td>
+                                <td class="pe-4 py-3 text-end text-secondary small">
+                                    @document.DocumentId
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>

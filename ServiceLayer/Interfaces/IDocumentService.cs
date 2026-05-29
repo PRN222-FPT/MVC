@@ -7,9 +7,12 @@ namespace ServiceLayer.Interfaces;
 /// </summary>
 public interface IDocumentService
 {
+    Task<IReadOnlyList<DocumentListItemDto>> GetDocumentsAsync(
+        CancellationToken cancellationToken = default);
+
     /// <summary>
-    /// Persists the uploaded file (disk + database) with status "pending" and returns the
-    /// new document id. Heavy processing is handled asynchronously by a background worker.
+    /// Persists the uploaded file, parses it, chunks extracted text, saves chunks, and returns
+    /// the final document status.
     /// </summary>
     Task<UploadDocumentResult> InitiateUploadAsync(
         DocumentUploadRequest request,
