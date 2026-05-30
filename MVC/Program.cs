@@ -116,7 +116,10 @@ try
     builder.Services.AddHttpClient<IEmbeddingService, EmbeddingService>((serviceProvider, client) =>
     {
         var options = serviceProvider.GetRequiredService<IOptions<OpenAiOptions>>().Value;
-        client.BaseAddress = new Uri(options.BaseUrl);
+        string baseUrl = options.BaseUrl.EndsWith("/", StringComparison.Ordinal)
+            ? options.BaseUrl
+            : $"{options.BaseUrl}/";
+        client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
         client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
     });
