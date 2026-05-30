@@ -96,6 +96,7 @@ try
     builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
     builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
+    builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
 
     // ----- Options -----
     builder.Services.Configure<UploadOptions>(
@@ -106,6 +107,8 @@ try
         builder.Configuration.GetSection(OcrOptions.SectionName));
     builder.Services.Configure<QdrantOptions>(
         builder.Configuration.GetSection(QdrantOptions.SectionName));
+    builder.Services.Configure<GeminiOptions>(
+        builder.Configuration.GetSection(GeminiOptions.SectionName));
 
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
@@ -128,6 +131,16 @@ try
         return new QdrantClient(host: options.Host, port: options.Port, https: options.Https);
     });
     builder.Services.AddScoped<IQdrantService, QdrantService>();
+
+    // ----- Google Gemini AI services -----
+    builder.Services.AddSingleton<Google.GenAI.Client>(sp =>
+    {
+        var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+        return new Google.GenAI.Client(apiKey: options.ApiKey);
+    });
+    builder.Services.AddScoped<IGeminiService, GeminiService>();
+    builder.Services.AddScoped<IRetrievalService, RetrievalService>();
+    builder.Services.AddScoped<IChatService, ChatService>();
 
     // ----- Storage + background processing -----
     builder.Services.AddSingleton<IStorageService>(serviceProvider =>
