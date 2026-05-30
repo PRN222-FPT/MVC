@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using MVC.Middlewares;
 using MVC.Workers;
+using Qdrant.Client;
 using Serilog;
 using Serilog.Events;
 using ServiceLayer.DTOs;
@@ -103,6 +104,8 @@ try
         builder.Configuration.GetSection(ChunkingOptions.SectionName));
     builder.Services.Configure<OcrOptions>(
         builder.Configuration.GetSection(OcrOptions.SectionName));
+    builder.Services.Configure<QdrantOptions>(
+        builder.Configuration.GetSection(QdrantOptions.SectionName));
 
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
@@ -113,6 +116,18 @@ try
     builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+    
+    // ----- Qdrant Vector DB services -----
+    builder.Services.AddSingleton<QdrantClient>(sp =>
+    {
+        var options = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+        if (!string.IsNullOrEmpty(options.ApiKey))
+        {
+            return new QdrantClient(host: options.Host, port: options.Port, https: options.Https, apiKey: options.ApiKey);
+        }
+        return new QdrantClient(host: options.Host, port: options.Port, https: options.Https);
+    });
+    builder.Services.AddScoped<IQdrantService, QdrantService>();
 
     // ----- Storage + background processing -----
     builder.Services.AddSingleton<IStorageService>(serviceProvider =>
