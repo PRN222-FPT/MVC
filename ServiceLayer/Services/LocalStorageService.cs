@@ -11,10 +11,21 @@ namespace ServiceLayer.Services;
 public sealed class LocalStorageService : IStorageService
 {
     private readonly UploadOptions _options;
+    private readonly string _contentRootPath;
 
     public LocalStorageService(IOptions<UploadOptions> options)
     {
         _options = options.Value;
+        _contentRootPath = AppContext.BaseDirectory;
+    }
+
+    public LocalStorageService(IOptions<UploadOptions> options, string contentRootPath)
+        : this(options)
+    {
+        if (!string.IsNullOrWhiteSpace(contentRootPath))
+        {
+            _contentRootPath = contentRootPath;
+        }
     }
 
     public async Task<string> SaveAsync(
@@ -62,7 +73,7 @@ public sealed class LocalStorageService : IStorageService
     private string GetAbsoluteRoot() =>
         Path.IsPathRooted(_options.StorageRoot)
             ? _options.StorageRoot
-            : Path.Combine(Directory.GetCurrentDirectory(), _options.StorageRoot);
+            : Path.Combine(_contentRootPath, _options.StorageRoot);
 
     private string ResolveFullPath(string relativePath)
     {
@@ -70,6 +81,13 @@ public sealed class LocalStorageService : IStorageService
         string normalized = relativePath.Replace('/', Path.DirectorySeparatorChar);
         if (Path.IsPathRooted(normalized))
             return normalized;
-        return Path.Combine(Directory.GetCurrentDirectory(), normalized);
+        string contentRootPath = Path.Combine(_contentRootPath, normalized);
+        if (File.Exists(contentRootPath))
+        {
+            return contentRootPath;
+        }
+
+        string currentDirectoryPath = Path.Combine(Directory.GetCurrentDirectory(), normalized);
+        return currentDirectoryPath;
     }
 }

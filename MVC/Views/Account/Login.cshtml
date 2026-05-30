@@ -1,0 +1,45 @@
+@model MVC.ViewModels.LoginViewModel
+
+@{
+    Layout = "_LoginLayout";
+    ViewData["Title"] = "Login";
+}
+
+<div class="min-vh-100 d-flex align-items-center justify-content-center bg-light">
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden" style="max-width: 480px; width: 100%;">
+        <div class="card-body p-5">
+            <div class="text-center mb-4">
+                <div class="d-flex align-items-center justify-content-center gap-2 mb-2">
+                    <span class="material-icons text-primary fs-2">description</span>
+                    <h1 class="h4 fw-bold mb-0">DocAssistant AI</h1>
+                </div>
+                <h2 class="h5 fw-bold text-dark mt-4">Welcome Back</h2>
+                <p class="text-secondary small">Please enter your details to access your documents.</p>
+            </div>
+
+            <form asp-action="Login" method="post">
+                @Html.AntiForgeryToken()
+                <input asp-for="ReturnUrl" type="hidden" />
+                <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+                <div class="mb-3">
+                    <label asp-for="Email" class="form-label small fw-bold text-secondary">Email Address</label>
+                    <input asp-for="Email" class="form-control form-control-lg bg-light border-0 fs-6" placeholder="name@company.com" autocomplete="username" />
+                    <span asp-validation-for="Email" class="text-danger small"></span>
+                </div>
+
+                <div class="mb-4">
+                    <label asp-for="Password" class="form-label small fw-bold text-secondary mb-0">Password</label>
+                    <input asp-for="Password" class="form-control form-control-lg bg-light border-0 fs-6" placeholder="••••••••" autocomplete="current-password" />
+                    <span asp-validation-for="Password" class="text-danger small"></span>
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100 py-2 fw-bold shadow-sm">Sign In</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -3,12 +3,15 @@ using DataAccessLayer;
 using DataAccessLayer.Models;
 using DataAccessLayer.Repositories;
 using DataAccessLayer.UnitOfWork;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using MVC.Middlewares;
 using MVC.Workers;
 using Serilog;
 using Serilog.Events;
+using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
 using ServiceLayer.Options;
 using ServiceLayer.Services;
@@ -35,6 +38,18 @@ try
 
     // ----- MVC + API controllers -----
     builder.Services.AddControllersWithViews();
+
+    builder.Services
+        .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+        .AddCookie(options =>
+        {
+            options.LoginPath = "/Account/Login";
+            options.AccessDeniedPath = "/Account/AccessDenied";
+            options.Cookie.Name = "DocAssistant.Auth";
+            options.Cookie.HttpOnly = true;
+            options.SlidingExpiration = true;
+            options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        });
 
     // ----- Swagger / OpenAPI -----
     builder.Services.AddEndpointsApiExplorer();
@@ -84,19 +99,38 @@ try
     // ----- Options -----
     builder.Services.Configure<UploadOptions>(
         builder.Configuration.GetSection(UploadOptions.SectionName));
+    builder.Services.Configure<ChunkingOptions>(
+        builder.Configuration.GetSection(ChunkingOptions.SectionName));
+    builder.Services.Configure<OcrOptions>(
+        builder.Configuration.GetSection(OcrOptions.SectionName));
 
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
     builder.Services.AddScoped<IProductService, ProductService>();
     builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
+    builder.Services.AddScoped<IRecursiveChunkingService, RecursiveChunkingService>();
+    builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
+    builder.Services.AddScoped<IAccountService, AccountService>();
+    builder.Services.AddScoped<IUserManagementService, UserManagementService>();
 
     // ----- Storage + background processing -----
-    builder.Services.AddSingleton<IStorageService, LocalStorageService>();
+    builder.Services.AddSingleton<IStorageService>(serviceProvider =>
+        new LocalStorageService(
+            serviceProvider.GetRequiredService<IOptions<UploadOptions>>(),
+            builder.Environment.ContentRootPath));
     builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
     builder.Services.AddHostedService<DocumentProcessingWorker>();
 
     var app = builder.Build();
+
+    using (IServiceScope scope = app.Services.CreateScope())
+    {
+        var userManagementService = scope.ServiceProvider.GetRequiredService<IUserManagementService>();
+        await userManagementService.EnsureAdminUserAsync(new AdminUserSeedDto(
+            "admin@gmail.com",
+            "PBKDF2$100000$R0lSRU9ORV9BRE1JTl9TQUxU$Idc6k7eiE+pqDI5o//p5/vhww9o0lKnCDC6TfOGwbK8="));
+    }
 
     // ----- HTTP pipeline -----
     app.UseGlobalExceptionHandler();
@@ -122,6 +156,7 @@ try
     app.UseHttpsRedirection();
     app.UseRouting();
 
+    app.UseAuthentication();
     app.UseAuthorization();
 
     app.MapStaticAssets();
@@ -132,7 +167,7 @@ try
     // Conventional MVC routing for view-based controllers.
     app.MapControllerRoute(
         name: "default",
-        pattern: "{controller=Home}/{action=Index}/{id?}")
+        pattern: "{controller=Account}/{action=Login}/{id?}")
         .WithStaticAssets();
 
     app.Run();
@@ -145,6 +180,7 @@ finally
 {
     Log.CloseAndFlush();
 }
+
 
 // Exposed for WebApplicationFactory-based integration tests.
 public partial class Program { }

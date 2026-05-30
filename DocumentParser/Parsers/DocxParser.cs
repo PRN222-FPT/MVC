@@ -1,4 +1,5 @@
 using DocumentParser.Models;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 
@@ -33,10 +34,25 @@ public sealed class DocxParser
         if (!File.Exists(filePath))
             throw new FileNotFoundException("DOCX file not found.", filePath);
 
+        using var wordDoc = WordprocessingDocument.Open(filePath, isEditable: false);
+        return ParseDocument(wordDoc, Path.GetFileName(filePath));
+    }
+
+    /// <summary>
+    /// Parses the DOCX from a <see cref="Stream"/> and returns a <see cref="ParseResult"/>.
+    /// </summary>
+    public ParseResult Parse(Stream stream, string sourceFile = "unknown.docx")
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        using var wordDoc = WordprocessingDocument.Open(stream, isEditable: false);
+        return ParseDocument(wordDoc, sourceFile);
+    }
+
+    private ParseResult ParseDocument(WordprocessingDocument wordDoc, string sourceFile)
+    {
         var warnings = new List<string>();
         var pages = new List<ParsedPage>();
-
-        using var wordDoc = WordprocessingDocument.Open(filePath, isEditable: false);
 
         var body = wordDoc.MainDocumentPart?.Document?.Body
             ?? throw new InvalidOperationException("DOCX body is null — file may be corrupt.");
@@ -48,18 +64,7 @@ public sealed class DocxParser
 
         foreach (var element in body.ChildElements)
         {
-            switch (element)
-            {
-                case Paragraph para:
-                    ProcessParagraph(para, currentPageLines, ref pageNumber, pages, ref hasExplicitBreaks);
-                    break;
-
-                case Table table:
-                    ProcessTable(table, currentPageLines);
-                    break;
-
-                // Ignore other block-level elements (sdt, bookmarkStart, etc.)
-            }
+            ProcessBlock(element, currentPageLines, ref pageNumber, pages, ref hasExplicitBreaks);
         }
 
         // Flush last page.
@@ -73,12 +78,12 @@ public sealed class DocxParser
             );
 
         warnings.Add(
-            "Text boxes, headers/footers, footnotes, and endnotes are NOT included in this extraction."
+            "Headers/footers, footnotes, and endnotes are NOT included in this extraction."
         );
 
         return new ParseResult
         {
-            SourceFile = Path.GetFileName(filePath),
+            SourceFile = sourceFile,
             Format = "DOCX",
             Pages = pages,
             Warnings = warnings
@@ -88,6 +93,30 @@ public sealed class DocxParser
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    private static void ProcessBlock(
+        OpenXmlElement element,
+        List<string> currentLines,
+        ref int pageNumber,
+        List<ParsedPage> pages,
+        ref bool hasExplicitBreaks)
+    {
+        switch (element)
+        {
+            case Paragraph paragraph:
+                ProcessParagraph(paragraph, currentLines, ref pageNumber, pages, ref hasExplicitBreaks);
+                return;
+
+            case Table table:
+                ProcessTable(table, currentLines, ref pageNumber, pages, ref hasExplicitBreaks);
+                return;
+        }
+
+        foreach (var child in element.ChildElements)
+        {
+            ProcessBlock(child, currentLines, ref pageNumber, pages, ref hasExplicitBreaks);
+        }
+    }
 
     private static void ProcessParagraph(
         Paragraph para,
@@ -110,11 +139,12 @@ public sealed class DocxParser
             pageNumber++;
         }
 
-        // Collect run text, skip deleted runs.
+        // Collect visible text, including text nested in hyperlinks, smart tags,
+        // content controls, and text boxes. Skip deleted revision text.
         var runTexts = para
-            .Descendants<Run>()
-            .Where(run => run.Parent is not DeletedRun)
-            .Select(run => run.InnerText)
+            .Descendants<Text>()
+            .Where(text => !text.Ancestors<DeletedRun>().Any())
+            .Select(text => text.Text)
             .Where(t => !string.IsNullOrEmpty(t));
 
         string paraText = string.Join(string.Empty, runTexts).Trim();
@@ -123,14 +153,31 @@ public sealed class DocxParser
             currentLines.Add(paraText);
     }
 
-    private static void ProcessTable(Table table, List<string> currentLines)
+    private static void ProcessTable(
+        Table table,
+        List<string> currentLines,
+        ref int pageNumber,
+        List<ParsedPage> pages,
+        ref bool hasExplicitBreaks)
     {
         foreach (var row in table.Elements<TableRow>())
         {
-            var cellTexts = row
-                .Elements<TableCell>()
-                .Select(cell => cell.InnerText.Trim())
-                .Where(t => !string.IsNullOrEmpty(t));
+            var cellTexts = new List<string>();
+
+            foreach (var cell in row.Elements<TableCell>())
+            {
+                var cellLines = new List<string>();
+                foreach (var child in cell.ChildElements)
+                {
+                    ProcessBlock(child, cellLines, ref pageNumber, pages, ref hasExplicitBreaks);
+                }
+
+                string cellText = string.Join(" ", cellLines).Trim();
+                if (!string.IsNullOrEmpty(cellText))
+                {
+                    cellTexts.Add(cellText);
+                }
+            }
 
             string rowLine = string.Join(" | ", cellTexts);
             if (!string.IsNullOrEmpty(rowLine))

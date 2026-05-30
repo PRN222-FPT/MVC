@@ -29,12 +29,32 @@ public sealed class DocumentUploadRequest
 }
 
 /// <summary>
-/// Result returned to the client after an upload is accepted for async processing.
+/// Result returned to the client after an upload has been ingested.
 /// </summary>
 public sealed record UploadDocumentResult(
     Guid DocumentId,
     string Title,
     string Status,
     string FileType,
+    string FileUrl,
+    int ChunkCount,
+    string? ProcessingError = null
+);
+
+public sealed record DocumentListItemDto(
+    Guid DocumentId,
+    string Title,
+    string FileType,
+    string Status,
+    DateTime? CreatedAt,
     string FileUrl
+);
+
+/// <summary>
+/// Represents a structured chunk of document text.
+/// </summary>
+public sealed record ChunkDto(
+    int PageNumber,
+    int ChunkIndex,
+    string Content
 );

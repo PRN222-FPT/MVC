@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MVC.ViewModels;
@@ -8,12 +10,11 @@ using ServiceLayer.Options;
 namespace MVC.Controllers;
 
 /// <summary>
-/// API endpoints for uploading documents into the RAG ingestion pipeline.
+/// Document library and upload workflow for the RAG ingestion pipeline.
 /// </summary>
-[ApiController]
+[Authorize]
 [Route("Documents")]
-[Produces("application/json")]
-public class DocumentController : ControllerBase
+public class DocumentController : Controller
 {
     private readonly IDocumentService _documentService;
     private readonly UploadOptions _uploadOptions;
@@ -29,40 +30,84 @@ public class DocumentController : ControllerBase
         _logger = logger;
     }
 
+    [HttpGet]
+    public IActionResult Index()
+    {
+        return RedirectToAction(nameof(Library));
+    }
+
+    [HttpGet("Library")]
+    public async Task<IActionResult> Library(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<DocumentListItemDto> documents = await _documentService.GetDocumentsAsync(cancellationToken);
+
+        var viewModel = new DocumentLibraryViewModel
+        {
+            Documents = documents.Select(document => new DocumentListItemViewModel
+            {
+                DocumentId = document.DocumentId,
+                Title = document.Title,
+                FileType = document.FileType,
+                Status = document.Status,
+                CreatedAt = document.CreatedAt,
+                FileUrl = document.FileUrl
+            }).ToList()
+        };
+
+        return View(viewModel);
+    }
+
+    [HttpGet("Upload")]
+    public IActionResult Upload()
+    {
+        return View(BuildUploadPageViewModel(new UploadDocumentForm()));
+    }
+
+    // Backward-compatible route for older sidebar links.
+    [HttpGet("UploadPage")]
+    public IActionResult UploadPage()
+    {
+        return RedirectToAction(nameof(Upload));
+    }
+
     /// <summary>
-    /// Uploads a PDF or DOCX file for asynchronous processing.
+    /// Uploads, parses, chunks, and persists a PDF or DOCX file.
     /// </summary>
     /// <remarks>
-    /// Validates type (PDF/DOCX) and size (max 20 MB), stores the file and a
-    /// "pending" database row, then returns 202 Accepted immediately. The actual
-    /// parsing/processing is performed later by a background worker.
+    /// Validates type and size, stores the file and database row, then invokes
+    /// the ingestion pipeline before returning to the library page.
     /// </remarks>
-    /// <response code="202">Upload accepted; processing will continue asynchronously.</response>
-    /// <response code="400">The request is missing a file, or the file type/size is invalid.</response>
     [HttpPost("Upload")]
-    [RequestSizeLimit(25L * 1024 * 1024)] // hard cap slightly above the 20 MB business limit
-    [ProducesResponseType(typeof(UploadDocumentResult), StatusCodes.Status202Accepted)]
-    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(25L * 1024 * 1024)]
     public async Task<IActionResult> Upload(
-        [FromForm] UploadDocumentForm form,
+        [Bind(Prefix = "Form")] UploadDocumentForm form,
         CancellationToken cancellationToken)
     {
-        IFormFile? file = form.File;
+        if (!ModelState.IsValid)
+        {
+            return View(BuildUploadPageViewModel(form));
+        }
 
-        if (file is null || file.Length == 0)
-            return BadRequest(Problem400("A non-empty file is required."));
-
+        IFormFile file = form.File;
         string extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!_uploadOptions.AllowedExtensions.Contains(extension))
-            return BadRequest(Problem400(
-                $"Unsupported file type '{extension}'. Allowed: {string.Join(", ", _uploadOptions.AllowedExtensions)}."));
+
+        if (!_uploadOptions.AllowedExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+        {
+            ModelState.AddModelError(
+                "Form.File",
+                $"Unsupported file type '{extension}'. Allowed: {string.Join(", ", _uploadOptions.AllowedExtensions)}.");
+            return View(BuildUploadPageViewModel(form));
+        }
 
         if (file.Length > _uploadOptions.MaxFileSizeBytes)
         {
             long limitMb = _uploadOptions.MaxFileSizeBytes / (1024 * 1024);
-            return BadRequest(Problem400($"File exceeds the {limitMb} MB limit."));
+            ModelState.AddModelError("Form.File", $"File exceeds the {limitMb} MB limit.");
+            return View(BuildUploadPageViewModel(form));
         }
 
+        Guid? uploadedBy = TryGetCurrentUserId();
         await using Stream content = file.OpenReadStream();
 
         var request = new DocumentUploadRequest
@@ -72,22 +117,50 @@ public class DocumentController : ControllerBase
             ContentType = file.ContentType,
             Length = file.Length,
             ChapterId = form.ChapterId,
-            Title = form.Title
+            Title = form.Title,
+            UploadedBy = uploadedBy
         };
 
-        UploadDocumentResult result = await _documentService.InitiateUploadAsync(request, cancellationToken);
+        try
+        {
+            UploadDocumentResult result = await _documentService.InitiateUploadAsync(request, cancellationToken);
 
-        _logger.LogInformation(
-            "Accepted upload '{FileName}' ({Bytes} bytes) -> document {DocumentId}",
-            file.FileName, file.Length, result.DocumentId);
+            _logger.LogInformation(
+                "Accepted upload '{FileName}' ({Bytes} bytes) -> document {DocumentId}",
+                file.FileName, file.Length, result.DocumentId);
 
-        // 202 Accepted: stored as pending; processing continues asynchronously.
-        return AcceptedAtAction(
-            actionName: nameof(Upload),
-            routeValues: new { id = result.DocumentId },
-            value: result);
+            if (string.Equals(result.Status, "processed", StringComparison.OrdinalIgnoreCase))
+            {
+                TempData["Success"] = $"'{result.Title}' was uploaded and processed into {result.ChunkCount} chunks.";
+            }
+            else
+            {
+                string detail = string.IsNullOrWhiteSpace(result.ProcessingError)
+                    ? "Check the document content and try again."
+                    : result.ProcessingError;
+                TempData["Error"] = $"'{result.Title}' was uploaded, but processing failed. {detail}";
+            }
+
+            return RedirectToAction(nameof(Library));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            ModelState.AddModelError("Form.ChapterId", ex.Message);
+            return View(BuildUploadPageViewModel(form));
+        }
     }
 
-    private static ValidationProblemDetails Problem400(string detail) =>
-        new() { Title = "Invalid upload request.", Detail = detail, Status = StatusCodes.Status400BadRequest };
+    private DocumentUploadPageViewModel BuildUploadPageViewModel(UploadDocumentForm form) =>
+        new()
+        {
+            Form = form,
+            MaxFileSizeBytes = _uploadOptions.MaxFileSizeBytes,
+            AllowedExtensionsText = string.Join(", ", _uploadOptions.AllowedExtensions.Select(e => e.TrimStart('.').ToUpperInvariant()))
+        };
+
+    private Guid? TryGetCurrentUserId()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userId, out Guid parsed) ? parsed : null;
+    }
 }

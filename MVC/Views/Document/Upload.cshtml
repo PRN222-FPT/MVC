@@ -1,0 +1,132 @@
+@model MVC.ViewModels.DocumentUploadPageViewModel
+
+@{
+    ViewData["Title"] = "Upload Document";
+}
+
+<div class="d-flex justify-content-between align-items-end mb-4">
+    <div>
+        <h2 class="display-6 fw-bold mb-1">Upload Document</h2>
+        <p class="text-secondary">Upload new documents for AI analysis.</p>
+    </div>
+    <a asp-action="Library" class="btn btn-outline-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+        <span class="material-icons">library_books</span> Back to Library
+    </a>
+</div>
+
+<form asp-action="Upload" method="post" enctype="multipart/form-data">
+    @Html.AntiForgeryToken()
+
+    <div class="row g-4">
+        <div class="col-xl-8">
+            <div class="card border-light shadow-sm rounded-4">
+                <div class="card-body p-4 p-lg-5">
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+                    <label for="Form_File" id="uploadDropZone" class="border border-dashed rounded-4 p-5 text-center bg-light d-block" style="cursor: pointer;">
+                        <div class="d-inline-flex align-items-center justify-content-center bg-primary-subtle text-primary rounded-circle mb-3" style="width: 64px; height: 64px;">
+                            <span class="material-icons fs-2">cloud_upload</span>
+                        </div>
+                        <h3 class="h5 fw-bold mb-2">Choose a document</h3>
+                        <p class="text-secondary mb-4">Supported formats: @Model.AllowedExtensionsText. Max size @Model.MaxFileSizeMb MB.</p>
+                        <span class="btn btn-primary px-4 py-2 fw-semibold">Browse files</span>
+                        <input asp-for="Form.File" class="visually-hidden" accept=".pdf,.docx" />
+                    </label>
+                    <div id="selectedFilePanel" class="d-none mt-3 rounded-3 border bg-white p-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="material-icons text-primary">description</span>
+                            <div class="min-width-0 flex-grow-1">
+                                <div id="selectedFileName" class="fw-semibold text-truncate"></div>
+                                <div id="selectedFileSize" class="small text-secondary"></div>
+                            </div>
+                            <button type="button" id="clearSelectedFile" class="btn btn-sm btn-outline-secondary">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+                    <span asp-validation-for="Form.File" class="text-danger small d-block mt-2"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <div class="card border-light shadow-sm rounded-4">
+                <div class="card-body p-4">
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                        <span class="material-icons text-primary">tune</span>
+                        <h3 class="h5 fw-bold mb-0">Document Details</h3>
+                    </div>
+
+                    <div class="mb-3">
+                        <label asp-for="Form.Title" class="form-label small fw-bold text-secondary">Title</label>
+                        <input asp-for="Form.Title" class="form-control" placeholder="Defaults to file name" />
+                        <span asp-validation-for="Form.Title" class="text-danger small"></span>
+                    </div>
+
+                    <div class="mb-4">
+                        <label asp-for="Form.ChapterId" class="form-label small fw-bold text-secondary">Chapter Id</label>
+                        <input asp-for="Form.ChapterId" class="form-control" placeholder="Optional" />
+                        <span asp-validation-for="Form.ChapterId" class="text-danger small"></span>
+                        <div class="form-text">Leave blank to use the default Uploads chapter.</div>
+                    </div>
+
+                    <button type="submit" id="uploadSubmitButton" class="btn btn-primary w-100 py-2 fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                        <span class="material-icons" style="font-size: 20px;">upload_file</span>
+                        Upload and Process
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const fileInput = document.getElementById('Form_File');
+            const panel = document.getElementById('selectedFilePanel');
+            const fileName = document.getElementById('selectedFileName');
+            const fileSize = document.getElementById('selectedFileSize');
+            const clearButton = document.getElementById('clearSelectedFile');
+            const submitButton = document.getElementById('uploadSubmitButton');
+
+            const formatBytes = bytes => {
+                if (!bytes) return '0 KB';
+                const units = ['bytes', 'KB', 'MB', 'GB'];
+                const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+                const value = bytes / Math.pow(1024, index);
+                return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+            };
+
+            const updateSelectedFile = () => {
+                const file = fileInput.files && fileInput.files.length > 0 ? fileInput.files[0] : null;
+                if (!file) {
+                    panel.classList.add('d-none');
+                    fileName.textContent = '';
+                    fileSize.textContent = '';
+                    return;
+                }
+
+                fileName.textContent = file.name;
+                fileSize.textContent = formatBytes(file.size);
+                panel.classList.remove('d-none');
+            };
+
+            fileInput.addEventListener('change', updateSelectedFile);
+            clearButton.addEventListener('click', () => {
+                fileInput.value = '';
+                updateSelectedFile();
+            });
+
+            fileInput.form?.addEventListener('submit', () => {
+                if (!fileInput.files || fileInput.files.length === 0) {
+                    return;
+                }
+
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Processing';
+            });
+        })();
+    </script>
+}
