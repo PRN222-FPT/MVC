@@ -9,6 +9,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using MVC.Middlewares;
 using MVC.Workers;
+using Qdrant.Client;
 using Serilog;
 using Serilog.Events;
 using ServiceLayer.DTOs;
@@ -95,6 +96,7 @@ try
     builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
     builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
+    builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
 
     // ----- Options -----
     builder.Services.Configure<UploadOptions>(
@@ -103,6 +105,10 @@ try
         builder.Configuration.GetSection(ChunkingOptions.SectionName));
     builder.Services.Configure<OcrOptions>(
         builder.Configuration.GetSection(OcrOptions.SectionName));
+    builder.Services.Configure<QdrantOptions>(
+        builder.Configuration.GetSection(QdrantOptions.SectionName));
+    builder.Services.Configure<GeminiOptions>(
+        builder.Configuration.GetSection(GeminiOptions.SectionName));
 
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
@@ -113,6 +119,28 @@ try
     builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+    
+    // ----- Qdrant Vector DB services -----
+    builder.Services.AddSingleton<QdrantClient>(sp =>
+    {
+        var options = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+        if (!string.IsNullOrEmpty(options.ApiKey))
+        {
+            return new QdrantClient(host: options.Host, port: options.Port, https: options.Https, apiKey: options.ApiKey);
+        }
+        return new QdrantClient(host: options.Host, port: options.Port, https: options.Https);
+    });
+    builder.Services.AddScoped<IQdrantService, QdrantService>();
+
+    // ----- Google Gemini AI services -----
+    builder.Services.AddSingleton<Google.GenAI.Client>(sp =>
+    {
+        var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+        return new Google.GenAI.Client(apiKey: options.ApiKey);
+    });
+    builder.Services.AddScoped<IGeminiService, GeminiService>();
+    builder.Services.AddScoped<IRetrievalService, RetrievalService>();
+    builder.Services.AddScoped<IChatService, ChatService>();
 
     // ----- Storage + background processing -----
     builder.Services.AddSingleton<IStorageService>(serviceProvider =>
