@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Reflection;
 using DataAccessLayer;
 using DataAccessLayer.Models;
@@ -105,6 +106,8 @@ try
         builder.Configuration.GetSection(ChunkingOptions.SectionName));
     builder.Services.Configure<OcrOptions>(
         builder.Configuration.GetSection(OcrOptions.SectionName));
+    builder.Services.Configure<OpenAiOptions>(
+        builder.Configuration.GetSection(OpenAiOptions.SectionName));
     builder.Services.Configure<QdrantOptions>(
         builder.Configuration.GetSection(QdrantOptions.SectionName));
     builder.Services.Configure<GeminiOptions>(
@@ -116,6 +119,16 @@ try
     builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
     builder.Services.AddScoped<IRecursiveChunkingService, RecursiveChunkingService>();
+    builder.Services.AddHttpClient<IEmbeddingService, EmbeddingService>((serviceProvider, client) =>
+    {
+        var options = serviceProvider.GetRequiredService<IOptions<OpenAiOptions>>().Value;
+        string baseUrl = options.BaseUrl.EndsWith("/", StringComparison.Ordinal)
+            ? options.BaseUrl
+            : $"{options.BaseUrl}/";
+        client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
+        client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+    });
     builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
