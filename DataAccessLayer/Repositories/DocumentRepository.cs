@@ -70,6 +70,18 @@ public class DocumentRepository : IDocumentRepository
         return true;
     }
 
+    public async Task<IReadOnlyList<Document>> GetByIdsAsync(IEnumerable<Guid> documentIds)
+    {
+        if (documentIds == null)
+        {
+            return Array.Empty<Document>();
+        }
+        return await _context.Documents
+            .AsNoTracking()
+            .Where(d => documentIds.Contains(d.DocumentId))
+            .ToListAsync();
+    }
+
     public IQueryable<Document> Query()
     {
         return _context.Documents.AsQueryable();
