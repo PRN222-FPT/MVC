@@ -129,17 +129,7 @@ public class DocumentController : Controller
                 "Accepted upload '{FileName}' ({Bytes} bytes) -> document {DocumentId}",
                 file.FileName, file.Length, result.DocumentId);
 
-            if (string.Equals(result.Status, "processed", StringComparison.OrdinalIgnoreCase))
-            {
-                TempData["Success"] = $"'{result.Title}' was uploaded and processed into {result.ChunkCount} chunks.";
-            }
-            else
-            {
-                string detail = string.IsNullOrWhiteSpace(result.ProcessingError)
-                    ? "Check the document content and try again."
-                    : result.ProcessingError;
-                TempData["Error"] = $"'{result.Title}' was uploaded, but processing failed. {detail}";
-            }
+            TempData["Success"] = $"'{result.Title}' was uploaded and queued for processing.";
 
             return RedirectToAction(nameof(Library));
         }

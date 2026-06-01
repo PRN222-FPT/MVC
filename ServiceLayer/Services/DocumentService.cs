@@ -8,8 +8,9 @@ using ServiceLayer.Interfaces;
 namespace ServiceLayer.Services;
 
 /// <summary>
-/// Orchestrates an upload: save the file, insert the document row, parse the document,
-/// chunk extracted text, and persist chunks before returning to the MVC boundary.
+/// Orchestrates an upload: saves the file, inserts the document row, creates a
+/// ProcessingJob, then enqueues the document id for background processing.
+/// The background worker picks it up and runs parse → chunk → embed → upsert → update status.
 /// </summary>
 public sealed class DocumentService : IDocumentService
 {
@@ -19,20 +20,20 @@ public sealed class DocumentService : IDocumentService
     private readonly IDocumentRepository _documentRepository;
     private readonly Prn222Context _context;
     private readonly IStorageService _storage;
-    private readonly IDocumentProcessor _documentProcessor;
+    private readonly IBackgroundTaskQueue _queue;
     private readonly ILogger<DocumentService> _logger;
 
     public DocumentService(
         IDocumentRepository documentRepository,
         Prn222Context context,
         IStorageService storage,
-        IDocumentProcessor documentProcessor,
+        IBackgroundTaskQueue queue,
         ILogger<DocumentService> logger)
     {
         _documentRepository = documentRepository;
         _context = context;
         _storage = storage;
-        _documentProcessor = documentProcessor;
+        _queue = queue;
         _logger = logger;
     }
 
@@ -103,35 +104,21 @@ public sealed class DocumentService : IDocumentService
         await _context.ProcessingJobs.AddAsync(job, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
-        // 4) Detect parser by normalized file type, parse, chunk, and save chunks.
-        await _documentProcessor.ProcessAsync(documentId, cancellationToken);
-
-        Document? processedDocument = await _context.Documents
-            .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.DocumentId == documentId, cancellationToken);
-        string finalStatus = processedDocument?.Status ?? "failed";
-        int chunkCount = await _context.Chunks
-            .AsNoTracking()
-            .CountAsync(c => c.DocumentId == documentId, cancellationToken);
-        string? processingError = await _context.ProcessingJobs
-            .AsNoTracking()
-            .Where(j => j.DocumentId == documentId)
-            .OrderByDescending(j => j.StartedAt)
-            .Select(j => j.ErrorMessage)
-            .FirstOrDefaultAsync(cancellationToken);
+        // 4) Hand off to the background worker via the in-process queue.
+        //    The worker calls IDocumentProcessor.ProcessAsync (parse → chunk → embed → upsert Qdrant).
+        await _queue.EnqueueAsync(documentId, cancellationToken);
 
         _logger.LogInformation(
-            "Document {DocumentId} uploaded and ingested with status {Status} ({FileType}, {Bytes} bytes, {ChunkCount} chunks, chapter {ChapterId})",
-            documentId, finalStatus, document.FileType, request.Length, chunkCount, chapterId);
+            "Document {DocumentId} accepted for background processing ({FileType}, {Bytes} bytes, chapter {ChapterId})",
+            documentId, document.FileType, request.Length, chapterId);
 
         return new UploadDocumentResult(
             documentId,
             title,
-            finalStatus,
+            "queued",
             document.FileType ?? "unknown",
             relativePath,
-            chunkCount,
-            processingError);
+            ChunkCount: 0);
     }
 
     // -------------------------------------------------------------------------

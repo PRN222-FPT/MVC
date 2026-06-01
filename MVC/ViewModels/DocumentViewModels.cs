@@ -55,7 +55,7 @@ public sealed class DocumentListItemViewModel
 
     public string StatusBadgeClass => Status.ToLowerInvariant() switch
     {
-        "processed" => "bg-success-subtle text-success",
+        "completed" or "processed" => "bg-success-subtle text-success",
         "failed" => "bg-danger-subtle text-danger",
         "processing" => "bg-info-subtle text-info",
         "queued" => "bg-warning-subtle text-warning",
