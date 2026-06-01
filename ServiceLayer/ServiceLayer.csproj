@@ -12,6 +12,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Resources\rag_prompt_template.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Test</_Parameter1>
+    </AssemblyAttribute>
     <PackageReference Include="Google.GenAI" Version="1.7.0" />
     <PackageReference Include="Qdrant.Client" Version="1.18.1" />
   </ItemGroup>

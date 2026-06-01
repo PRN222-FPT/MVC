@@ -12,8 +12,8 @@ namespace ServiceLayer.Services;
 
 /// <summary>
 /// Background processing for a queued document:
-/// Loads document metadata, opens the file stream, parses via PdfParser/DocxParser,
-/// chunks the text recursively page-by-page, and commits chunks to the database.
+/// Loads document metadata → parses PDF/DOCX → chunks text → embeds chunks →
+/// upserts to Qdrant → persists to PostgreSQL → updates status to completed/failed.
 /// </summary>
 public sealed class DocumentProcessor : IDocumentProcessor
 {
@@ -21,6 +21,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
     private readonly IDocumentRepository _documentRepository;
     private readonly IStorageService _storageService;
     private readonly IRecursiveChunkingService _chunkingService;
+    private readonly IEmbeddingService _embeddingService;
+    private readonly IQdrantService _qdrantService;
     private readonly OcrOptions _ocrOptions;
     private readonly ILogger<DocumentProcessor> _logger;
 
@@ -29,6 +31,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
         IDocumentRepository documentRepository,
         IStorageService storageService,
         IRecursiveChunkingService chunkingService,
+        IEmbeddingService embeddingService,
+        IQdrantService qdrantService,
         IOptions<OcrOptions> ocrOptions,
         ILogger<DocumentProcessor> logger)
     {
@@ -36,6 +40,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
         _documentRepository = documentRepository;
         _storageService = storageService;
         _chunkingService = chunkingService;
+        _embeddingService = embeddingService;
+        _qdrantService = qdrantService;
         _ocrOptions = ocrOptions.Value;
         _logger = logger;
     }
@@ -114,7 +120,7 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 }
             }
 
-            // 5. Chunk page-by-page (Option 2) returning ChunkDto
+            // 5. Chunk page-by-page, preserving page number from ChunkDto
             var chunkDtos = _chunkingService.ChunkDocument(pages);
             var newChunks = chunkDtos.Select(dto => new Chunk
             {
@@ -131,22 +137,38 @@ public sealed class DocumentProcessor : IDocumentProcessor
                     "No extractable text was found in the document, so no chunks could be created.");
             }
 
-            // 6. Bulk Delete old chunks and Insert new chunks atomically
+            // 6. Embed chunks
+            IReadOnlyList<string> texts = newChunks.Select(c => c.Content).ToList();
+            IReadOnlyList<float[]> embeddings = await _embeddingService.CreateEmbeddingsAsync(texts, cancellationToken);
+
+            // 7. Ensure Qdrant collection exists, then upsert vectors.
+            //    PageNo comes from ChunkDto (preserved from parser) — more reliable than regex on content.
+            await _qdrantService.CreateCollectionAsync(cancellationToken);
+            var points = newChunks.Select((chunk, i) => new QdrantVectorPoint(
+                ChunkId: chunk.ChunkId,
+                DocumentId: documentId,
+                PageNo: chunkDtos[i].PageNumber,
+                ChunkText: chunk.Content,
+                ChunkIndex: chunk.ChunkIndex,
+                Vector: i < embeddings.Count ? embeddings[i] : Array.Empty<float>()
+            ));
+            await _qdrantService.UpsertVectorsAsync(points, cancellationToken);
+
+            // 8. Bulk delete old chunks and insert new ones
             var existingChunks = _context.Chunks.Where(c => c.DocumentId == documentId);
             _context.Chunks.RemoveRange(existingChunks);
-
             await _context.Chunks.AddRangeAsync(newChunks, cancellationToken);
 
-            await _documentRepository.UpdateStatusAsync(documentId, "processed");
+            await _documentRepository.UpdateStatusAsync(documentId, "completed");
 
             if (job is not null)
             {
-                job.JobStatus = "done";
+                job.JobStatus = "completed";
                 job.FinishedAt = UnspecifiedNow();
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Document {DocumentId} successfully processed into {ChunkCount} chunks", documentId, newChunks.Count);
+            _logger.LogInformation("Document {DocumentId} processed into {ChunkCount} chunks and upserted to Qdrant", documentId, newChunks.Count);
         }
         catch (Exception ex)
         {

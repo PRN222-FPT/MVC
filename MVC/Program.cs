@@ -64,7 +64,6 @@ try
             Description = "Endpoints for uploading and tracking documents in the RAG pipeline."
         });
 
-        // Pull XML summaries from controllers/actions into the Swagger UI.
         var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
         var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
         if (File.Exists(xmlPath))
@@ -73,10 +72,7 @@ try
         }
     });
 
-    // ----- DbContexts (single PostgreSQL DB via DefaultConnection) -----
-    // The connection string is a secret: it is NOT committed. Provide it locally via
-    //   dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=...;Password=..."
-    // or an environment variable / deployment secret.
+    // ----- DbContexts -----
     string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     if (string.IsNullOrWhiteSpace(connectionString))
     {
@@ -85,11 +81,9 @@ try
             "Set it via user-secrets or an environment variable (it is intentionally not stored in source).");
     }
 
-    // Existing Category/Product context (clean-architecture demo).
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(connectionString));
 
-    // RAG/document pipeline context (scaffolded from PostgreSQL).
     builder.Services.AddDbContext<Prn222Context>(options =>
         options.UseNpgsql(connectionString));
 
@@ -132,6 +126,14 @@ try
     builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+    builder.Services.AddScoped<ICitationService, CitationService>();
+
+    // ----- Embedding + vector store: NoOp stubs -----
+    // Replace with real implementations when teammates' branches are merged:
+    //   IEmbeddingService → EmbeddingService (Hải Anh - T17, feature/embedding-service)
+    //   IQdrantService    → QdrantService    (Anh Kiệt - T16, feature/qdrant-service)
+    builder.Services.AddScoped<IEmbeddingService, NoOpEmbeddingService>();
+    builder.Services.AddScoped<IQdrantService, NoOpQdrantService>();
     
     // ----- Qdrant Vector DB services -----
     builder.Services.AddSingleton<QdrantClient>(sp =>
@@ -175,13 +177,10 @@ try
 
     // ----- HTTP pipeline -----
     app.UseGlobalExceptionHandler();
-
-    // Structured request logging (method, path, status, elapsed).
     app.UseSerilogRequestLogging();
 
     if (app.Environment.IsDevelopment())
     {
-        // Swagger UI available at /swagger.
         app.UseSwagger();
         app.UseSwaggerUI(options =>
         {
@@ -196,16 +195,10 @@ try
 
     app.UseHttpsRedirection();
     app.UseRouting();
-
     app.UseAuthentication();
     app.UseAuthorization();
-
     app.MapStaticAssets();
-
-    // Attribute-routed API controllers (e.g. DocumentController).
     app.MapControllers();
-
-    // Conventional MVC routing for view-based controllers.
     app.MapControllerRoute(
         name: "default",
         pattern: "{controller=Account}/{action=Login}/{id?}")
@@ -221,7 +214,6 @@ finally
 {
     Log.CloseAndFlush();
 }
-
 
 // Exposed for WebApplicationFactory-based integration tests.
 public partial class Program { }
