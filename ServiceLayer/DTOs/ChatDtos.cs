@@ -17,12 +17,3 @@ public sealed class ChatQueryResponse
     public List<CitationDto> Citations { get; set; } = new();
     public long LatencyMs { get; set; }
 }
-
-public sealed class CitationDto
-{
-    public Guid DocumentId { get; set; }
-    public string DocumentTitle { get; set; } = null!;
-    public int PageNo { get; set; }
-    public int ChunkIndex { get; set; }
-    public float Score { get; set; }
-}
