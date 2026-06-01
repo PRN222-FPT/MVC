@@ -14,5 +14,7 @@ public interface IDocumentRepository
 
     Task<bool> DeleteAsync(Guid documentId);
 
+    Task<IReadOnlyList<Document>> GetByIdsAsync(IEnumerable<Guid> documentIds);
+
     IQueryable<Document> Query();
 }
