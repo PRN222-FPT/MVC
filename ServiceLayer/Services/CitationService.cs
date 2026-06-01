@@ -26,6 +26,7 @@ public sealed class CitationService : ICitationService
             {
                 DocumentId = chunk.DocumentId,
                 DocTitle = chunk.DocTitle,
+                DocumentTitle = chunk.DocTitle,
                 PageNo = ExtractPageNumber(chunk.Content),
                 ChunkIndex = chunk.ChunkIndex,
                 Score = chunk.Score,

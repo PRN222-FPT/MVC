@@ -74,11 +74,21 @@ try
 
     // ----- DbContexts -----
     string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    if (string.IsNullOrWhiteSpace(connectionString))
+    bool hasConfiguredConnectionString = !string.IsNullOrWhiteSpace(connectionString);
+    if (!hasConfiguredConnectionString && !builder.Environment.IsDevelopment())
     {
         throw new InvalidOperationException(
             "ConnectionStrings:DefaultConnection is not configured. " +
             "Set it via user-secrets or an environment variable (it is intentionally not stored in source).");
+    }
+
+    if (!hasConfiguredConnectionString)
+    {
+        Log.Warning(
+            "ConnectionStrings:DefaultConnection is not configured. " +
+            "Using local development PostgreSQL fallback; configure user-secrets or an environment variable for database-backed features.");
+
+        connectionString = "Host=localhost;Port=5432;Database=prn222_dev;Username=postgres";
     }
 
     builder.Services.AddDbContext<AppDbContext>(options =>
@@ -148,12 +158,21 @@ try
     builder.Services.AddScoped<IQdrantService, QdrantService>();
 
     // ----- Google Gemini AI services -----
-    builder.Services.AddSingleton<Google.GenAI.Client>(sp =>
+    string? geminiApiKey = builder.Configuration.GetSection(GeminiOptions.SectionName)["ApiKey"];
+    if (string.IsNullOrWhiteSpace(geminiApiKey))
     {
-        var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
-        return new Google.GenAI.Client(apiKey: options.ApiKey);
-    });
-    builder.Services.AddScoped<IGeminiService, GeminiService>();
+        Log.Warning("Gemini:ApiKey is not configured. Chat will use a development fallback response.");
+        builder.Services.AddScoped<IGeminiService, NoOpGeminiService>();
+    }
+    else
+    {
+        builder.Services.AddSingleton<Google.GenAI.Client>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+            return new Google.GenAI.Client(apiKey: options.ApiKey);
+        });
+        builder.Services.AddScoped<IGeminiService, GeminiService>();
+    }
     builder.Services.AddScoped<IRetrievalService, RetrievalService>();
     builder.Services.AddScoped<IChatService, ChatService>();
 
@@ -167,12 +186,18 @@ try
 
     var app = builder.Build();
 
-    using (IServiceScope scope = app.Services.CreateScope())
+    if (hasConfiguredConnectionString)
     {
+        using IServiceScope scope = app.Services.CreateScope();
         var userManagementService = scope.ServiceProvider.GetRequiredService<IUserManagementService>();
-        await userManagementService.EnsureAdminUserAsync(new AdminUserSeedDto(
-            "admin@gmail.com",
-            "PBKDF2$100000$R0lSRU9ORV9BRE1JTl9TQUxU$Idc6k7eiE+pqDI5o//p5/vhww9o0lKnCDC6TfOGwbK8="));
+        await userManagementService.EnsureAdminUserAsync(
+            new AdminUserSeedDto(
+                "admin@gmail.com",
+                "PBKDF2$100000$R0lSRU9ORV9BRE1JTl9TQUxU$Idc6k7eiE+pqDI5o//p5/vhww9o0lKnCDC6TfOGwbK8="));
+    }
+    else
+    {
+        Log.Warning("Skipping admin seed because no configured database connection string was provided.");
     }
 
     // ----- HTTP pipeline -----

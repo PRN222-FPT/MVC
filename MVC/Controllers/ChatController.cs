@@ -24,7 +24,8 @@ public class ChatController : Controller
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    [HttpGet]
+    [HttpGet("Chat")]
+    [HttpGet("Chat/Index")]
     public IActionResult Index()
     {
         return View();

@@ -9,6 +9,7 @@ public sealed class CitationDto
 {
     public Guid DocumentId { get; set; }
     public string DocTitle { get; set; } = string.Empty;
+    public string DocumentTitle { get; set; } = string.Empty;
     public int PageNo { get; set; }
     public int ChunkIndex { get; set; }
     public float Score { get; set; }
