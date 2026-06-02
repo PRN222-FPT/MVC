@@ -107,23 +107,28 @@
             typingIndicator.remove();
 
             if (!response.ok) {
-                const errData = await response.json();
-                appendErrorMessage(errData.error || 'Server error occurred.');
+                const errData = await readJsonSafely(response);
+                appendErrorMessage(errData?.error || `Server error occurred (${response.status}).`);
                 return;
             }
 
             const data = await response.json();
             
+            if (!data.sessionId) {
+                appendErrorMessage('Server response did not include a chat session id.');
+                return;
+            }
+
             if (!currentSessionId) {
                 currentSessionId = data.sessionId;
                 sessionStatus.innerText = `Active Session: ${currentSessionId.substring(0, 8)}...`;
             }
 
             // Render AI response
-            appendAiMessage(data.answer, data.citations, data.latency_ms);
+            appendAiMessage(data.answer || '', data.citations || [], data.latency_ms ?? 0);
         } catch (err) {
             typingIndicator.remove();
-            appendErrorMessage('Network connection failure. Please try again.');
+            appendErrorMessage('Unable to complete the chat request. Please try again.');
             console.error(err);
         } finally {
             chatInput.disabled = false;
@@ -221,6 +226,14 @@
             </div>
         `;
         chatContainer.appendChild(msgDiv);
+    }
+
+    async function readJsonSafely(response) {
+        try {
+            return await response.json();
+        } catch {
+            return null;
+        }
     }
 
     function scrollChat() {

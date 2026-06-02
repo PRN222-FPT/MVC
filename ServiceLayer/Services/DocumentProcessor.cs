@@ -120,14 +120,34 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 }
             }
 
+            int nonEmptyPageCount = pages.Count(page => !page.IsEmpty && !string.IsNullOrWhiteSpace(page.Text));
+            int extractedCharacterCount = pages.Sum(page => string.IsNullOrWhiteSpace(page.Text) ? 0 : page.Text.Length);
+            _logger.LogInformation(
+                "Document {DocumentId} extraction completed. Pages: {PageCount}; non-empty pages: {NonEmptyPageCount}; extracted characters: {ExtractedCharacterCount}.",
+                documentId,
+                pages.Count,
+                nonEmptyPageCount,
+                extractedCharacterCount);
+
             // 5. Chunk page-by-page, preserving page number from ChunkDto
             var chunkDtos = _chunkingService.ChunkDocument(pages);
-            var newChunks = chunkDtos.Select(dto => new Chunk
+            int skippedEmptyChunks = chunkDtos.Count(dto => string.IsNullOrWhiteSpace(dto.Content));
+            var validChunkDtos = chunkDtos
+                .Where(dto => !string.IsNullOrWhiteSpace(dto.Content))
+                .ToList();
+
+            _logger.LogInformation(
+                "Document {DocumentId} chunked into {ChunkCount} chunks; skipped {SkippedChunkCount} empty chunks.",
+                documentId,
+                chunkDtos.Count,
+                skippedEmptyChunks);
+
+            var newChunks = validChunkDtos.Select(dto => new Chunk
             {
                 ChunkId = Guid.NewGuid(),
                 DocumentId = documentId,
                 ChunkIndex = dto.ChunkIndex,
-                Content = dto.Content,
+                Content = dto.Content.Trim(),
                 CreatedAt = UnspecifiedNow()
             }).ToList();
 
@@ -141,17 +161,53 @@ public sealed class DocumentProcessor : IDocumentProcessor
             IReadOnlyList<string> texts = newChunks.Select(c => c.Content).ToList();
             IReadOnlyList<float[]> embeddings = await _embeddingService.CreateEmbeddingsAsync(texts, cancellationToken);
 
+            int firstEmbeddingDimension = embeddings.FirstOrDefault(e => e is { Length: > 0 })?.Length ?? 0;
+            _logger.LogInformation(
+                "Embedding service returned {EmbeddingCount} embeddings for {ChunkCount} chunks. First valid embedding dimension: {EmbeddingDimension}.",
+                embeddings.Count,
+                newChunks.Count,
+                firstEmbeddingDimension);
+
             // 7. Ensure Qdrant collection exists, then upsert vectors.
             //    PageNo comes from ChunkDto (preserved from parser) — more reliable than regex on content.
             await _qdrantService.CreateCollectionAsync(cancellationToken);
-            var points = newChunks.Select((chunk, i) => new QdrantVectorPoint(
-                ChunkId: chunk.ChunkId,
-                DocumentId: documentId,
-                PageNo: chunkDtos[i].PageNumber,
-                ChunkText: chunk.Content,
-                ChunkIndex: chunk.ChunkIndex,
-                Vector: i < embeddings.Count ? embeddings[i] : Array.Empty<float>()
-            ));
+            var points = new List<QdrantVectorPoint>(newChunks.Count);
+            int skippedInvalidVectors = 0;
+
+            for (int i = 0; i < newChunks.Count; i++)
+            {
+                float[]? embedding = i < embeddings.Count ? embeddings[i] : null;
+                if (embedding is null || embedding.Length == 0)
+                {
+                    skippedInvalidVectors++;
+                    _logger.LogWarning(
+                        "Skipping chunk {ChunkIndex} for document {DocumentId} because embedding was null or empty.",
+                        newChunks[i].ChunkIndex,
+                        documentId);
+                    continue;
+                }
+
+                points.Add(new QdrantVectorPoint(
+                    ChunkId: newChunks[i].ChunkId,
+                    DocumentId: documentId,
+                    PageNo: validChunkDtos[i].PageNumber,
+                    ChunkText: newChunks[i].Content,
+                    ChunkIndex: newChunks[i].ChunkIndex,
+                    Vector: embedding));
+            }
+
+            _logger.LogInformation(
+                "Prepared {VectorCount} Qdrant vectors for document {DocumentId}; skipped {SkippedVectorCount} invalid vectors.",
+                points.Count,
+                documentId,
+                skippedInvalidVectors);
+
+            if (points.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "No valid embedding vectors were generated, so Qdrant upsert cannot continue.");
+            }
+
             await _qdrantService.UpsertVectorsAsync(points, cancellationToken);
 
             // 8. Bulk delete old chunks and insert new ones

@@ -12,7 +12,7 @@ namespace MVC.Controllers;
 /// <summary>
 /// Document library and upload workflow for the RAG ingestion pipeline.
 /// </summary>
-[Authorize]
+[Authorize(Roles = UserRoles.Teacher)]
 [Route("Documents")]
 public class DocumentController : Controller
 {
@@ -43,18 +43,29 @@ public class DocumentController : Controller
 
         var viewModel = new DocumentLibraryViewModel
         {
-            Documents = documents.Select(document => new DocumentListItemViewModel
-            {
-                DocumentId = document.DocumentId,
-                Title = document.Title,
-                FileType = document.FileType,
-                Status = document.Status,
-                CreatedAt = document.CreatedAt,
-                FileUrl = document.FileUrl
-            }).ToList()
+            Documents = documents.Select(MapDocumentListItem).ToList()
         };
 
         return View(viewModel);
+    }
+
+    [HttpGet("Statuses")]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public async Task<IActionResult> Statuses(CancellationToken cancellationToken)
+    {
+        IReadOnlyList<DocumentListItemDto> documents = await _documentService.GetDocumentsAsync(cancellationToken);
+
+        return Json(documents.Select(document =>
+        {
+            DocumentListItemViewModel viewModel = MapDocumentListItem(document);
+            return new
+            {
+                documentId = viewModel.DocumentId,
+                status = viewModel.Status,
+                statusBadgeClass = viewModel.StatusBadgeClass,
+                isTerminal = IsTerminalStatus(viewModel.Status)
+            };
+        }));
     }
 
     [HttpGet("Upload")]
@@ -147,6 +158,22 @@ public class DocumentController : Controller
             MaxFileSizeBytes = _uploadOptions.MaxFileSizeBytes,
             AllowedExtensionsText = string.Join(", ", _uploadOptions.AllowedExtensions.Select(e => e.TrimStart('.').ToUpperInvariant()))
         };
+
+    private static DocumentListItemViewModel MapDocumentListItem(DocumentListItemDto document) =>
+        new()
+        {
+            DocumentId = document.DocumentId,
+            Title = document.Title,
+            FileType = document.FileType,
+            Status = document.Status,
+            CreatedAt = document.CreatedAt,
+            FileUrl = document.FileUrl
+        };
+
+    private static bool IsTerminalStatus(string status) =>
+        status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("processed", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("failed", StringComparison.OrdinalIgnoreCase);
 
     private Guid? TryGetCurrentUserId()
     {

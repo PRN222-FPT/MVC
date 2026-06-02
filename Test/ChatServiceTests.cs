@@ -110,11 +110,6 @@ public class ChatServiceTests
         public string? LastContext { get; private set; }
         public string? LastQuestion { get; private set; }
 
-        public Task<float[]> EmbedTextAsync(string text, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(new float[] { 0.1f, 0.2f });
-        }
-
         public Task<string> GenerateAnswerAsync(string context, string question, CancellationToken cancellationToken = default)
         {
             LastContext = context;

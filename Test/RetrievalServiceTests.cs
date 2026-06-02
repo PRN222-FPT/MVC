@@ -14,21 +14,19 @@ namespace Test;
 /// </summary>
 public class RetrievalServiceTests
 {
-    private class FakeGeminiService : IGeminiService
+    private class FakeEmbeddingService : IEmbeddingService
     {
-        public bool EmbedTextCalled { get; private set; }
-        public string? LastEmbeddedText { get; private set; }
+        public bool CreateEmbeddingsCalled { get; private set; }
+        public IReadOnlyList<string>? LastInputs { get; private set; }
 
-        public Task<float[]> EmbedTextAsync(string text, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<float[]>> CreateEmbeddingsAsync(
+            IReadOnlyList<string> inputs,
+            CancellationToken cancellationToken = default)
         {
-            EmbedTextCalled = true;
-            LastEmbeddedText = text;
-            return Task.FromResult(new float[] { 0.1f, 0.2f, 0.3f });
-        }
-
-        public Task<string> GenerateAnswerAsync(string context, string question, CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult("Fake answer");
+            CreateEmbeddingsCalled = true;
+            LastInputs = inputs;
+            IReadOnlyList<float[]> result = [new float[] { 0.1f, 0.2f, 0.3f }];
+            return Task.FromResult(result);
         }
     }
 
@@ -66,17 +64,17 @@ public class RetrievalServiceTests
     public async Task RetrieveContextAsync_EmptyQuery_ReturnsEmptyList()
     {
         // Arrange
-        var gemini = new FakeGeminiService();
+        var embedding = new FakeEmbeddingService();
         var qdrant = new FakeQdrantService(new List<QdrantSearchResult>());
         var logger = NullLogger<RetrievalService>.Instance;
-        var service = new RetrievalService(gemini, qdrant, logger);
+        var service = new RetrievalService(embedding, qdrant, logger);
 
         // Act
         var result = await service.RetrieveContextAsync("   ");
 
         // Assert
         Assert.Empty(result);
-        Assert.False(gemini.EmbedTextCalled);
+        Assert.False(embedding.CreateEmbeddingsCalled);
         Assert.False(qdrant.SearchCalled);
     }
 
@@ -84,7 +82,7 @@ public class RetrievalServiceTests
     public async Task RetrieveContextAsync_ValidQuery_PerformsSemanticSearchAndFiltersResults()
     {
         // Arrange
-        var gemini = new FakeGeminiService();
+        var embedding = new FakeEmbeddingService();
         var docId = Guid.NewGuid();
         var searchResults = new List<QdrantSearchResult>
         {
@@ -96,14 +94,15 @@ public class RetrievalServiceTests
         };
         var qdrant = new FakeQdrantService(searchResults);
         var logger = NullLogger<RetrievalService>.Instance;
-        var service = new RetrievalService(gemini, qdrant, logger);
+        var service = new RetrievalService(embedding, qdrant, logger);
 
         // Act
         var results = await service.RetrieveContextAsync("search query");
 
         // Assert
-        Assert.True(gemini.EmbedTextCalled);
-        Assert.Equal("search query", gemini.LastEmbeddedText);
+        Assert.True(embedding.CreateEmbeddingsCalled);
+        Assert.NotNull(embedding.LastInputs);
+        Assert.Equal("search query", embedding.LastInputs[0]);
         Assert.True(qdrant.SearchCalled);
         Assert.Equal(10, qdrant.LastLimit); // Check if search limit is 10
         
@@ -119,7 +118,7 @@ public class RetrievalServiceTests
     public async Task RetrieveContextAsync_MoreThanFiveMatches_ClampsToTopFive()
     {
         // Arrange
-        var gemini = new FakeGeminiService();
+        var embedding = new FakeEmbeddingService();
         var docId = Guid.NewGuid();
         var searchResults = new List<QdrantSearchResult>();
         for (int i = 1; i <= 8; i++)
@@ -128,7 +127,7 @@ public class RetrievalServiceTests
         }
         var qdrant = new FakeQdrantService(searchResults);
         var logger = NullLogger<RetrievalService>.Instance;
-        var service = new RetrievalService(gemini, qdrant, logger);
+        var service = new RetrievalService(embedding, qdrant, logger);
 
         // Act
         var results = await service.RetrieveContextAsync("query");

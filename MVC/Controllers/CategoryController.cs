@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MVC.ViewModels;
 using ServiceLayer.DTOs;
@@ -5,6 +6,7 @@ using ServiceLayer.Interfaces;
 
 namespace MVC.Controllers;
 
+[Authorize(Roles = UserRoles.DisabledLegacyRoute)]
 public class CategoryController : Controller
 {
     private readonly ICategoryService _categoryService;

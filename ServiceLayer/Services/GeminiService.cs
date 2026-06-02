@@ -34,44 +34,6 @@ public sealed class GeminiService : IGeminiService
     }
 
     /// <inheritdoc />
-    public async Task<float[]> EmbedTextAsync(string text, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            throw new ArgumentException("Text to embed cannot be null or whitespace.", nameof(text));
-        }
-
-        try
-        {
-            _logger.LogInformation("Generating embedding for text using model {ModelName}...", _options.EmbeddingModelName);
-            var response = await _client.Models.EmbedContentAsync(
-                model: _options.EmbeddingModelName,
-                contents: text,
-                cancellationToken: cancellationToken
-            );
-
-            float[]? values = null;
-            if (response.Embeddings != null && response.Embeddings.Count > 0 && response.Embeddings[0]?.Values != null)
-            {
-                values = response.Embeddings[0].Values!.Select(v => (float)v).ToArray();
-            }
-
-            if (values == null || values.Length == 0)
-            {
-                throw new InvalidOperationException("Failed to generate embedding: empty values returned from Google AI.");
-            }
-
-            _logger.LogInformation("Successfully generated embedding of size {Size}.", values.Length);
-            return values;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to generate embedding using model '{EmbeddingModelName}'", _options.EmbeddingModelName);
-            throw;
-        }
-    }
-
-    /// <inheritdoc />
     public async Task<string> GenerateAnswerAsync(string context, string question, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(question))

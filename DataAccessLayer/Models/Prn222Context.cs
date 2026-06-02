@@ -385,6 +385,9 @@ public partial class Prn222Context : DbContext
             entity.Property(e => e.FullName)
                 .HasMaxLength(255)
                 .HasColumnName("full_name");
+            entity.Property(e => e.IsBlocked)
+                .HasDefaultValue(false)
+                .HasColumnName("is_blocked");
             entity.Property(e => e.PasswordHash).HasColumnName("password_hash");
             entity.Property(e => e.Role)
                 .HasMaxLength(50)

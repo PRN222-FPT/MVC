@@ -75,7 +75,12 @@ public class AccountController : Controller
             return RedirectToAction("Index", "AdminUsers");
         }
 
-        return RedirectToAction("Library", "Document");
+        if (string.Equals(user.Role, UserRoles.Teacher, StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction("Library", "Document");
+        }
+
+        return RedirectToAction("Index", "Chat");
     }
 
     [HttpPost]
@@ -104,6 +109,11 @@ public class AccountController : Controller
             return RedirectToAction("Index", "AdminUsers");
         }
 
-        return RedirectToAction("Library", "Document");
+        if (User.IsInRole(UserRoles.Teacher))
+        {
+            return RedirectToAction("Library", "Document");
+        }
+
+        return RedirectToAction("Index", "Chat");
     }
 }

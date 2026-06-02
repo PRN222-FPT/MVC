@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Reflection;
 using DataAccessLayer;
 using DataAccessLayer.Models;
@@ -110,12 +109,11 @@ try
         builder.Configuration.GetSection(ChunkingOptions.SectionName));
     builder.Services.Configure<OcrOptions>(
         builder.Configuration.GetSection(OcrOptions.SectionName));
-    builder.Services.Configure<OpenAiOptions>(
-        builder.Configuration.GetSection(OpenAiOptions.SectionName));
     builder.Services.Configure<QdrantOptions>(
         builder.Configuration.GetSection(QdrantOptions.SectionName));
     builder.Services.Configure<GeminiOptions>(
         builder.Configuration.GetSection(GeminiOptions.SectionName));
+    string? geminiApiKey = builder.Configuration.GetSection(GeminiOptions.SectionName)["ApiKey"];
 
     // ----- Domain services -----
     builder.Services.AddScoped<ICategoryService, CategoryService>();
@@ -123,28 +121,25 @@ try
     builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
     builder.Services.AddScoped<IRecursiveChunkingService, RecursiveChunkingService>();
-    builder.Services.AddHttpClient<IEmbeddingService, EmbeddingService>((serviceProvider, client) =>
+    if (string.IsNullOrWhiteSpace(geminiApiKey))
     {
-        var options = serviceProvider.GetRequiredService<IOptions<OpenAiOptions>>().Value;
-        string baseUrl = options.BaseUrl.EndsWith("/", StringComparison.Ordinal)
-            ? options.BaseUrl
-            : $"{options.BaseUrl}/";
-        client.BaseAddress = new Uri(baseUrl, UriKind.Absolute);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
-        client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-    });
+        Log.Warning("Gemini:ApiKey is not configured. Document processing will fail fast before Qdrant upsert.");
+        builder.Services.AddScoped<IEmbeddingService, NoOpEmbeddingService>();
+    }
+    else
+    {
+        builder.Services.AddSingleton<Google.GenAI.Client>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
+            return new Google.GenAI.Client(apiKey: options.ApiKey);
+        });
+        builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
+    }
     builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
     builder.Services.AddScoped<ICitationService, CitationService>();
 
-    // ----- Embedding + vector store: NoOp stubs -----
-    // Replace with real implementations when teammates' branches are merged:
-    //   IEmbeddingService → EmbeddingService (Hải Anh - T17, feature/embedding-service)
-    //   IQdrantService    → QdrantService    (Anh Kiệt - T16, feature/qdrant-service)
-    builder.Services.AddScoped<IEmbeddingService, NoOpEmbeddingService>();
-    builder.Services.AddScoped<IQdrantService, NoOpQdrantService>();
-    
     // ----- Qdrant Vector DB services -----
     builder.Services.AddSingleton<QdrantClient>(sp =>
     {
@@ -158,7 +153,6 @@ try
     builder.Services.AddScoped<IQdrantService, QdrantService>();
 
     // ----- Google Gemini AI services -----
-    string? geminiApiKey = builder.Configuration.GetSection(GeminiOptions.SectionName)["ApiKey"];
     if (string.IsNullOrWhiteSpace(geminiApiKey))
     {
         Log.Warning("Gemini:ApiKey is not configured. Chat will use a development fallback response.");
@@ -166,11 +160,6 @@ try
     }
     else
     {
-        builder.Services.AddSingleton<Google.GenAI.Client>(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<GeminiOptions>>().Value;
-            return new Google.GenAI.Client(apiKey: options.ApiKey);
-        });
         builder.Services.AddScoped<IGeminiService, GeminiService>();
     }
     builder.Services.AddScoped<IRetrievalService, RetrievalService>();
