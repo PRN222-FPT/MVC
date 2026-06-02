@@ -15,6 +15,8 @@ public partial class User
 
     public string? Role { get; set; }
 
+    public bool IsBlocked { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<BenchmarkRun> BenchmarkRuns { get; set; } = new List<BenchmarkRun>();

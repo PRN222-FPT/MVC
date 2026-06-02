@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using MVC.ViewModels;
@@ -6,6 +7,7 @@ using ServiceLayer.Interfaces;
 
 namespace MVC.Controllers;
 
+[Authorize(Roles = UserRoles.DisabledLegacyRoute)]
 public class ProductController : Controller
 {
     private readonly IProductService _productService;

@@ -55,6 +55,43 @@ public class QdrantServiceTests
     }
 
     [Fact]
+    public async Task UpsertVectorsAsync_EmptyPoints_ThrowsInvalidOperationException()
+    {
+        var client = new QdrantClient("localhost");
+        var options = Options.Create(new QdrantOptions());
+        var logger = NullLogger<QdrantService>.Instance;
+        var service = new QdrantService(client, options, logger);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpsertVectorsAsync(Array.Empty<QdrantVectorPoint>()));
+    }
+
+    [Fact]
+    public async Task UpsertVectorsAsync_EmptyVector_ThrowsInvalidOperationException()
+    {
+        var client = new QdrantClient("localhost");
+        var options = Options.Create(new QdrantOptions { VectorSize = 3 });
+        var logger = NullLogger<QdrantService>.Instance;
+        var service = new QdrantService(client, options, logger);
+
+        var point = CreatePoint(Array.Empty<float>());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpsertVectorsAsync([point]));
+    }
+
+    [Fact]
+    public async Task UpsertVectorsAsync_WrongVectorDimension_ThrowsInvalidOperationException()
+    {
+        var client = new QdrantClient("localhost");
+        var options = Options.Create(new QdrantOptions { VectorSize = 3 });
+        var logger = NullLogger<QdrantService>.Instance;
+        var service = new QdrantService(client, options, logger);
+
+        var point = CreatePoint([0.1f, 0.2f]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpsertVectorsAsync([point]));
+    }
+
+    [Fact]
     public async Task SearchAsync_NullQueryVector_ThrowsArgumentNullException()
     {
         var client = new QdrantClient("localhost");
@@ -64,4 +101,35 @@ public class QdrantServiceTests
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => service.SearchAsync(null!));
     }
+
+    [Fact]
+    public async Task SearchAsync_EmptyQueryVector_ThrowsArgumentException()
+    {
+        var client = new QdrantClient("localhost");
+        var options = Options.Create(new QdrantOptions());
+        var logger = NullLogger<QdrantService>.Instance;
+        var service = new QdrantService(client, options, logger);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync(Array.Empty<float>()));
+    }
+
+    [Fact]
+    public async Task SearchAsync_WrongVectorDimension_ThrowsArgumentException()
+    {
+        var client = new QdrantClient("localhost");
+        var options = Options.Create(new QdrantOptions { VectorSize = 3 });
+        var logger = NullLogger<QdrantService>.Instance;
+        var service = new QdrantService(client, options, logger);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => service.SearchAsync([0.1f, 0.2f]));
+    }
+
+    private static QdrantVectorPoint CreatePoint(float[] vector) =>
+        new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            "Chunk text",
+            0,
+            vector);
 }

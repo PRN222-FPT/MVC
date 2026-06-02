@@ -26,7 +26,7 @@ public sealed class AccountService : IAccountService
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
 
-        if (user is null || !_passwordHashService.VerifyPassword(request.Password, user.PasswordHash))
+        if (user is null || user.IsBlocked || !_passwordHashService.VerifyPassword(request.Password, user.PasswordHash))
         {
             return null;
         }

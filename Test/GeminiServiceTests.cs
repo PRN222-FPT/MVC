@@ -42,18 +42,6 @@ public class GeminiServiceTests
     }
 
     [Fact]
-    public async Task EmbedTextAsync_NullOrWhitespace_ThrowsArgumentException()
-    {
-        var client = new Client(apiKey: "API_KEY");
-        var options = Options.Create(new GeminiOptions());
-        var logger = NullLogger<GeminiService>.Instance;
-        var service = new GeminiService(client, options, logger);
-
-        await Assert.ThrowsAsync<ArgumentException>(() => service.EmbedTextAsync(null!));
-        await Assert.ThrowsAsync<ArgumentException>(() => service.EmbedTextAsync("   "));
-    }
-
-    [Fact]
     public async Task GenerateAnswerAsync_NullOrWhitespaceQuestion_ThrowsArgumentException()
     {
         var client = new Client(apiKey: "API_KEY");

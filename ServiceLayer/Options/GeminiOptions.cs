@@ -20,9 +20,9 @@ public sealed class GeminiOptions
 
     /// <summary>
     /// The model name for vector embeddings.
-    /// Default is "text-embedding-004" (dimension: 768).
+    /// Default is "gemini-embedding-001" with full-size 3072-dimensional output.
     /// </summary>
-    public string EmbeddingModelName { get; set; } = "text-embedding-004";
+    public string EmbeddingModelName { get; set; } = "gemini-embedding-001";
 
     /// <summary>
     /// System instruction/prompt used to guide response generation.

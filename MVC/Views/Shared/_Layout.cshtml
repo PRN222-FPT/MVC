@@ -1,3 +1,4 @@
+@using ServiceLayer.DTOs
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -145,24 +146,27 @@
         </div>
 
         <nav class="flex-grow-1 px-2 mt-2">
-            <a asp-controller="Document" asp-action="Upload" class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Upload" ? "active" : "")">
-                <span class="material-icons">upload_file</span> Upload
-            </a>
-            <a asp-controller="Document" asp-action="Library" class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Library" ? "active" : "")">
-                <span class="material-icons">library_books</span> Library
-            </a>
-            <a asp-controller="Chat" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")">
-                <span class="material-icons">forum</span> Chat
-            </a>
-            @if (User.IsInRole("admin"))
+            @if (User.IsInRole(UserRoles.Teacher))
+            {
+                <a asp-controller="Document" asp-action="Upload" class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Upload" ? "active" : "")">
+                    <span class="material-icons">upload_file</span> Upload
+                </a>
+                <a asp-controller="Document" asp-action="Library" class="nav-link @(ViewContext.RouteData.Values["action"]?.ToString() == "Library" ? "active" : "")">
+                    <span class="material-icons">library_books</span> Library
+                </a>
+            }
+            @if (User.IsInRole(UserRoles.Student) || User.IsInRole(UserRoles.Teacher))
+            {
+                <a asp-controller="Chat" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Chat" ? "active" : "")">
+                    <span class="material-icons">forum</span> Chat
+                </a>
+            }
+            @if (User.IsInRole(UserRoles.Admin))
             {
                 <a asp-controller="AdminUsers" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "AdminUsers" ? "active" : "")">
                     <span class="material-icons">admin_panel_settings</span> Users
                 </a>
             }
-            <a href="#" class="nav-link">
-                <span class="material-icons">settings</span> Settings
-            </a>
         </nav>
 
         <div class="p-2 border-top">
@@ -172,9 +176,6 @@
                     <span class="material-icons">add</span> New Analysis
                 </button>
             }
-            <a href="#" class="nav-link text-secondary">
-                <span class="material-icons">help_outline</span> Help Center
-            </a>
             <form asp-controller="Account" asp-action="Logout" method="post">
                 @Html.AntiForgeryToken()
                 <button type="submit" class="nav-link text-secondary border-0 bg-transparent w-100 text-start">

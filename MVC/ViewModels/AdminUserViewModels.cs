@@ -15,6 +15,10 @@ public sealed class AdminUsersIndexViewModel
     public int TeacherCount => Users.Count(u => u.Role == UserRoles.Teacher);
 
     public int AdminCount => Users.Count(u => u.Role == UserRoles.Admin);
+
+    public int BlockedCount => Users.Count(u => u.IsBlocked);
+
+    public Guid? CurrentAdminUserId { get; set; }
 }
 
 public sealed class AdminUserListItemViewModel
@@ -26,6 +30,8 @@ public sealed class AdminUserListItemViewModel
     public string Email { get; set; } = string.Empty;
 
     public string Role { get; set; } = string.Empty;
+
+    public bool IsBlocked { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 }

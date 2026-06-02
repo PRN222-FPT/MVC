@@ -4,8 +4,7 @@ using ServiceLayer.Interfaces;
 namespace ServiceLayer.Services;
 
 /// <summary>
-/// Stub: returns empty vectors and logs a warning. Swap for a real provider once an
-/// embedding API key is configured (e.g. OpenAI text-embedding-3-small).
+/// Fail-fast fallback used when no real embedding provider is configured.
 /// </summary>
 public sealed class NoOpEmbeddingService : IEmbeddingService
 {
@@ -20,11 +19,12 @@ public sealed class NoOpEmbeddingService : IEmbeddingService
         IReadOnlyList<string> inputs,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning(
-            "NoOpEmbeddingService: embedding skipped for {Count} inputs — configure a real embedding provider.",
-            inputs.Count);
+        int inputCount = inputs?.Count ?? 0;
+        _logger.LogError(
+            "Embedding generation failed before provider call because no embedding provider is configured. Input count: {InputCount}.",
+            inputCount);
 
-        IReadOnlyList<float[]> result = inputs.Select(_ => Array.Empty<float>()).ToArray();
-        return Task.FromResult(result);
+        throw new InvalidOperationException(
+            "No embedding provider is configured. Set Gemini:ApiKey or register a real IEmbeddingService before processing documents.");
     }
 }

@@ -20,7 +20,9 @@ public sealed class QdrantService : IQdrantService
     private readonly QdrantClient _client;
     private readonly QdrantOptions _options;
     private readonly ILogger<QdrantService> _logger;
-    private const string CollectionName = "documents";
+    private string CollectionName => string.IsNullOrWhiteSpace(_options.CollectionName)
+        ? "documents"
+        : _options.CollectionName.Trim();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="QdrantService"/> class.
@@ -38,6 +40,11 @@ public sealed class QdrantService : IQdrantService
     /// <inheritdoc />
     public async Task CreateCollectionAsync(CancellationToken cancellationToken = default)
     {
+        if (_options.VectorSize <= 0)
+        {
+            throw new InvalidOperationException("Qdrant vector size must be greater than zero.");
+        }
+
         try
         {
             _logger.LogInformation("Checking if Qdrant collection '{CollectionName}' exists...", CollectionName);
@@ -45,10 +52,28 @@ public sealed class QdrantService : IQdrantService
 
             if (exists)
             {
-                _logger.LogInformation("Qdrant collection '{CollectionName}' already exists. Skipping creation.", CollectionName);
+                bool collectionIsValid = await ValidateOrRecreateExistingCollectionAsync(cancellationToken);
+                if (!collectionIsValid)
+                {
+                    await CreateDocumentsCollectionAsync(cancellationToken);
+                    return;
+                }
+
+                _logger.LogInformation("Qdrant collection '{CollectionName}' already exists with vector dimension {Dimension}. Skipping creation.", CollectionName, _options.VectorSize);
                 return;
             }
 
+            await CreateDocumentsCollectionAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create or validate Qdrant collection '{CollectionName}'", CollectionName);
+            throw;
+        }
+    }
+
+    private async Task CreateDocumentsCollectionAsync(CancellationToken cancellationToken)
+    {
             _logger.LogInformation("Creating Qdrant collection '{CollectionName}' with dimension {Dimension}, Distance = Cosine, and HNSW (m=16, ef_construct=100)...", 
                 CollectionName, _options.VectorSize);
 
@@ -68,12 +93,34 @@ public sealed class QdrantService : IQdrantService
             );
 
             _logger.LogInformation("Successfully created Qdrant collection '{CollectionName}'.", CollectionName);
-        }
-        catch (Exception ex)
+    }
+
+    private async Task<bool> ValidateOrRecreateExistingCollectionAsync(CancellationToken cancellationToken)
+    {
+        var collectionInfo = await _client.GetCollectionInfoAsync(CollectionName, cancellationToken);
+        ulong actualSize = collectionInfo.Config.Params.VectorsConfig.Params.Size;
+        ulong expectedSize = (ulong)_options.VectorSize;
+
+        if (actualSize == expectedSize)
         {
-            _logger.LogError(ex, "Failed to create Qdrant collection '{CollectionName}'", CollectionName);
-            throw;
+            return true;
         }
+
+        if (!_options.RecreateCollectionOnVectorSizeMismatch)
+        {
+            throw new InvalidOperationException(
+                $"Qdrant collection '{CollectionName}' has vector dimension {actualSize}, expected {expectedSize}. Enable Qdrant:RecreateCollectionOnVectorSizeMismatch or update Qdrant:VectorSize to match the embedding model.");
+        }
+
+        _logger.LogWarning(
+            "Qdrant collection '{CollectionName}' has vector dimension {ActualDimension}, expected {ExpectedDimension}. Deleting and recreating collection because {OptionName} is enabled.",
+            CollectionName,
+            actualSize,
+            expectedSize,
+            nameof(QdrantOptions.RecreateCollectionOnVectorSizeMismatch));
+
+        await _client.DeleteCollectionAsync(CollectionName, cancellationToken: cancellationToken);
+        return false;
     }
 
     /// <inheritdoc />
@@ -87,11 +134,31 @@ public sealed class QdrantService : IQdrantService
         var pointsList = points.ToList();
         if (pointsList.Count == 0)
         {
-            return;
+            throw new InvalidOperationException("Cannot upsert an empty vector point collection to Qdrant.");
         }
 
         try
         {
+            int emptyVectorCount = pointsList.Count(p => p.Vector is null || p.Vector.Length == 0);
+            if (emptyVectorCount > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot upsert vectors to Qdrant because {emptyVectorCount} point(s) have null or empty vectors.");
+            }
+
+            int mismatchedVectorCount = pointsList.Count(p => p.Vector.Length != _options.VectorSize);
+            if (mismatchedVectorCount > 0)
+            {
+                int firstActualSize = pointsList.First(p => p.Vector.Length != _options.VectorSize).Vector.Length;
+                throw new InvalidOperationException(
+                    $"Cannot upsert vectors to Qdrant because {mismatchedVectorCount} point(s) have dimension {firstActualSize}, expected {_options.VectorSize}. Check Qdrant:VectorSize against the embedding model dimension.");
+            }
+
+            _logger.LogInformation(
+                "Validated {Count} Qdrant vectors. Embedding dimension: {Dimension}.",
+                pointsList.Count,
+                pointsList[0].Vector.Length);
+
             var pointStructs = pointsList.Select(p => new PointStruct
             {
                 Id = new PointId { Uuid = p.ChunkId.ToString() },
@@ -122,6 +189,18 @@ public sealed class QdrantService : IQdrantService
         if (queryVector == null)
         {
             throw new ArgumentNullException(nameof(queryVector));
+        }
+
+        if (queryVector.Length == 0)
+        {
+            throw new ArgumentException("Query vector must not be empty.", nameof(queryVector));
+        }
+
+        if (queryVector.Length != _options.VectorSize)
+        {
+            throw new ArgumentException(
+                $"Query vector dimension {queryVector.Length} does not match configured Qdrant vector size {_options.VectorSize}.",
+                nameof(queryVector));
         }
 
         try

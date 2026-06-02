@@ -5,6 +5,7 @@ public static class UserRoles
     public const string Admin = "admin";
     public const string Student = "student";
     public const string Teacher = "teacher";
+    public const string DisabledLegacyRoute = "__disabled_legacy_route";
 
     public static readonly string[] AssignableRoles = [Student, Teacher];
 
@@ -27,6 +28,7 @@ public sealed record AdminUserListItemDto(
     string FullName,
     string Email,
     string Role,
+    bool IsBlocked,
     DateTime? CreatedAt);
 
 public sealed record CreateManagedUserDto(
@@ -37,6 +39,10 @@ public sealed record CreateManagedUserDto(
     string? Department);
 
 public sealed record CreateManagedUserResultDto(
+    bool Succeeded,
+    string? ErrorMessage);
+
+public sealed record BlockManagedUserResultDto(
     bool Succeeded,
     string? ErrorMessage);
 

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MVC.ViewModels;
@@ -52,6 +53,31 @@ public sealed class AdminUsersController : Controller
         return RedirectToAction(nameof(Index));
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Block(Guid userId, CancellationToken cancellationToken)
+    {
+        Guid? currentAdminUserId = TryGetCurrentUserId();
+        if (currentAdminUserId is null)
+        {
+            return Unauthorized();
+        }
+
+        BlockManagedUserResultDto result = await _userManagementService.BlockUserAsync(
+            userId,
+            currentAdminUserId.Value,
+            cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            TempData["Error"] = result.ErrorMessage ?? "Could not block the account.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["Success"] = "Account blocked.";
+        return RedirectToAction(nameof(Index));
+    }
+
     private async Task<AdminUsersIndexViewModel> BuildIndexViewModelAsync(
         CreateUserViewModel createUser,
         CancellationToken cancellationToken)
@@ -61,14 +87,22 @@ public sealed class AdminUsersController : Controller
         return new AdminUsersIndexViewModel
         {
             CreateUser = createUser,
+            CurrentAdminUserId = TryGetCurrentUserId(),
             Users = users.Select(u => new AdminUserListItemViewModel
             {
                 UserId = u.UserId,
                 FullName = u.FullName,
                 Email = u.Email,
                 Role = u.Role,
+                IsBlocked = u.IsBlocked,
                 CreatedAt = u.CreatedAt
             }).ToList()
         };
+    }
+
+    private Guid? TryGetCurrentUserId()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userId, out Guid parsed) ? parsed : null;
     }
 }

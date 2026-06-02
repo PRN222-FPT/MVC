@@ -15,7 +15,7 @@
     </div>
 
     <div class="row g-3">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="bg-white border rounded-3 p-4 h-100">
                 <div class="d-flex align-items-center justify-content-between">
                     <span class="text-secondary fw-semibold">Students</span>
@@ -24,7 +24,7 @@
                 <div class="display-6 fw-bold mt-2">@Model.StudentCount</div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="bg-white border rounded-3 p-4 h-100">
                 <div class="d-flex align-items-center justify-content-between">
                     <span class="text-secondary fw-semibold">Teachers</span>
@@ -33,7 +33,7 @@
                 <div class="display-6 fw-bold mt-2">@Model.TeacherCount</div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="bg-white border rounded-3 p-4 h-100">
                 <div class="d-flex align-items-center justify-content-between">
                     <span class="text-secondary fw-semibold">Admins</span>
@@ -42,11 +42,24 @@
                 <div class="display-6 fw-bold mt-2">@Model.AdminCount</div>
             </div>
         </div>
+        <div class="col-md-3">
+            <div class="bg-white border rounded-3 p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="text-secondary fw-semibold">Blocked</span>
+                    <span class="material-icons text-danger">block</span>
+                </div>
+                <div class="display-6 fw-bold mt-2">@Model.BlockedCount</div>
+            </div>
+        </div>
     </div>
 
     @if (TempData["Success"] is string success)
     {
         <div class="alert alert-success mb-0">@success</div>
+    }
+    @if (TempData["Error"] is string error)
+    {
+        <div class="alert alert-danger mb-0">@error</div>
     }
 
     <div class="row g-4">
@@ -115,7 +128,9 @@
                             <tr>
                                 <th class="ps-4">User</th>
                                 <th>Role</th>
+                                <th>Status</th>
                                 <th>Created</th>
+                                <th class="pe-4 text-end">Action</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -136,8 +151,37 @@
                                     <td>
                                         <span class="badge @badgeClass text-capitalize">@user.Role</span>
                                     </td>
+                                    <td>
+                                        @if (user.IsBlocked)
+                                        {
+                                            <span class="badge text-bg-danger">Blocked</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-success">Active</span>
+                                        }
+                                    </td>
                                     <td class="text-secondary small">
                                         @(user.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "Unknown")
+                                    </td>
+                                    <td class="pe-4 text-end">
+                                        @if (!user.IsBlocked
+                                            && user.Role != UserRoles.Admin
+                                            && user.UserId != Model.CurrentAdminUserId)
+                                        {
+                                            <form asp-action="Block" method="post" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="userId" value="@user.UserId" />
+                                                <button type="submit" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1">
+                                                    <span class="material-icons" style="font-size: 18px;">block</span>
+                                                    Block
+                                                </button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary small">No action</span>
+                                        }
                                     </td>
                                 </tr>
                             }

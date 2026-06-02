@@ -28,6 +28,7 @@ public sealed class UserManagementService : IUserManagementService
                 u.FullName,
                 u.Email,
                 u.Role ?? UserRoles.Student,
+                u.IsBlocked,
                 u.CreatedAt))
             .ToListAsync(cancellationToken);
     }
@@ -80,6 +81,40 @@ public sealed class UserManagementService : IUserManagementService
 
         await _context.SaveChangesAsync(cancellationToken);
         return new CreateManagedUserResultDto(true, null);
+    }
+
+    public async Task<BlockManagedUserResultDto> BlockUserAsync(
+        Guid userId,
+        Guid currentAdminUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == currentAdminUserId)
+        {
+            return new BlockManagedUserResultDto(false, "You cannot block your own administrator account.");
+        }
+
+        User? user = await _context.Users
+            .FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
+
+        if (user is null)
+        {
+            return new BlockManagedUserResultDto(false, "User was not found.");
+        }
+
+        if (string.Equals(user.Role, UserRoles.Admin, StringComparison.OrdinalIgnoreCase))
+        {
+            return new BlockManagedUserResultDto(false, "Administrator accounts cannot be blocked here.");
+        }
+
+        if (user.IsBlocked)
+        {
+            return new BlockManagedUserResultDto(true, null);
+        }
+
+        user.IsBlocked = true;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new BlockManagedUserResultDto(true, null);
     }
 
     public async Task EnsureAdminUserAsync(AdminUserSeedDto seed, CancellationToken cancellationToken = default)

@@ -31,8 +31,19 @@ public sealed class QdrantOptions
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Dimension of the vectors in the collection.
-    /// Default is 1536 (OpenAI standard).
+    /// Name of the Qdrant collection that stores document chunk vectors.
     /// </summary>
-    public int VectorSize { get; set; } = 1536;
+    public string CollectionName { get; set; } = "documents";
+
+    /// <summary>
+    /// Dimension of the vectors in the collection.
+    /// Default is 3072 for Gemini embedding when using full-size vectors.
+    /// </summary>
+    public int VectorSize { get; set; } = 3072;
+
+    /// <summary>
+    /// When true, an existing collection with the wrong vector size is deleted and recreated.
+    /// This removes existing Qdrant vectors for the collection.
+    /// </summary>
+    public bool RecreateCollectionOnVectorSizeMismatch { get; set; } = false;
 }

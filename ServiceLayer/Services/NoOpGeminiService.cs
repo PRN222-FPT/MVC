@@ -15,12 +15,6 @@ public sealed class NoOpGeminiService : IGeminiService
         _logger = logger;
     }
 
-    public Task<float[]> EmbedTextAsync(string text, CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning("Gemini API key is not configured. Returning an empty embedding.");
-        return Task.FromResult(Array.Empty<float>());
-    }
-
     public Task<string> GenerateAnswerAsync(string context, string question, CancellationToken cancellationToken = default)
     {
         _logger.LogWarning("Gemini API key is not configured. Returning a fallback chat response.");

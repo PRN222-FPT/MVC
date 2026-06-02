@@ -12,7 +12,7 @@ using ServiceLayer.Interfaces;
 
 namespace MVC.Controllers;
 
-[Authorize]
+[Authorize(Roles = $"{UserRoles.Student},{UserRoles.Teacher}")]
 public class ChatController : Controller
 {
     private readonly IChatService _chatService;
@@ -61,6 +61,7 @@ public class ChatController : Controller
 
             return Json(new
             {
+                sessionId = response.SessionId,
                 answer = response.Answer,
                 citations = response.Citations.Select(c => new
                 {

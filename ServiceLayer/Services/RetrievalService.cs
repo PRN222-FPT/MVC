@@ -13,7 +13,7 @@ namespace ServiceLayer.Services;
 /// </summary>
 public sealed class RetrievalService : IRetrievalService
 {
-    private readonly IGeminiService _geminiService;
+    private readonly IEmbeddingService _embeddingService;
     private readonly IQdrantService _qdrantService;
     private readonly ILogger<RetrievalService> _logger;
 
@@ -25,11 +25,11 @@ public sealed class RetrievalService : IRetrievalService
     /// Initializes a new instance of the <see cref="RetrievalService"/> class.
     /// </summary>
     public RetrievalService(
-        IGeminiService geminiService,
+        IEmbeddingService embeddingService,
         IQdrantService qdrantService,
         ILogger<RetrievalService> logger)
     {
-        _geminiService = geminiService ?? throw new ArgumentNullException(nameof(geminiService));
+        _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
         _qdrantService = qdrantService ?? throw new ArgumentNullException(nameof(qdrantService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -47,8 +47,18 @@ public sealed class RetrievalService : IRetrievalService
         {
             _logger.LogInformation("Retrieving context for query: '{Query}'", query);
 
-            // 1. Embed the search query
-            var queryVector = await _geminiService.EmbedTextAsync(query, cancellationToken);
+            // 1. Embed the search query with the same provider used for document chunks.
+            IReadOnlyList<float[]> queryEmbeddings = await _embeddingService.CreateEmbeddingsAsync([query.Trim()], cancellationToken);
+            float[] queryVector = queryEmbeddings.Count > 0
+                ? queryEmbeddings[0]
+                : Array.Empty<float>();
+
+            if (queryVector.Length == 0)
+            {
+                throw new InvalidOperationException("Search query embedding was empty.");
+            }
+
+            _logger.LogInformation("Search query embedding generated with dimension {EmbeddingDimension}.", queryVector.Length);
 
             // 2. Perform search in Qdrant with limit = 10
             var searchResults = await _qdrantService.SearchAsync(
