@@ -16,4 +16,6 @@ public partial class Teacher
     public DateTime? CreatedAt { get; set; }
 
     public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
+
+    public virtual ICollection<TeacherSubject> TeacherSubjects { get; set; } = new List<TeacherSubject>();
 }

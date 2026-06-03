@@ -21,6 +21,9 @@ public sealed class DocumentUploadRequest
     /// <summary>Target chapter. When null, the service uses a default "Uploads" chapter.</summary>
     public Guid? ChapterId { get; init; }
 
+    /// <summary>Target subject. Required for teacher uploads.</summary>
+    public Guid SubjectId { get; init; }
+
     /// <summary>Optional display title. Defaults to the file name without extension.</summary>
     public string? Title { get; init; }
 
@@ -47,8 +50,19 @@ public sealed record DocumentListItemDto(
     string FileType,
     string Status,
     DateTime? CreatedAt,
-    string FileUrl
+    string FileUrl,
+    Guid SubjectId,
+    string SubjectCode,
+    string SubjectName
 );
+
+public sealed record DocumentFileDto(
+    Guid DocumentId,
+    string Title,
+    string FileName,
+    string FileType,
+    string ContentType,
+    Stream Content);
 
 /// <summary>
 /// Represents a structured chunk of document text.

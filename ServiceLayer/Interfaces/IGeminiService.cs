@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 namespace ServiceLayer.Interfaces;
 
 /// <summary>
-/// Service interface for interacting with the Google Generative AI Gemini models.
+/// Service interface for interacting with Gemini-compatible chat models.
 /// </summary>
 public interface IGeminiService
 {

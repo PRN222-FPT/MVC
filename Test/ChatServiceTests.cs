@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DataAccessLayer.Models;
 using DataAccessLayer.Repositories;
+using DataAccessLayer.UnitOfWork;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
@@ -25,6 +26,25 @@ public class ChatServiceTests
             return Task.FromResult(Sessions.FirstOrDefault(s => s.SessionId == sessionId));
         }
 
+        public Task<Session?> GetSessionByIdForUserAsync(Guid sessionId, Guid userId)
+        {
+            return Task.FromResult(Sessions.FirstOrDefault(s => s.SessionId == sessionId && s.UserId == userId));
+        }
+
+        public Task<IReadOnlyList<Session>> GetSessionsByUserIdAsync(Guid userId)
+        {
+            foreach (var session in Sessions)
+            {
+                session.Messages = Messages.Where(m => m.SessionId == session.SessionId).ToList();
+            }
+
+            IReadOnlyList<Session> list = Sessions
+                .Where(s => s.UserId == userId)
+                .OrderByDescending(s => s.Messages.Max(m => (DateTime?)m.CreatedAt) ?? s.StartedAt)
+                .ToList();
+            return Task.FromResult(list);
+        }
+
         public Task<Session> CreateSessionAsync(Session session)
         {
             Sessions.Add(session);
@@ -40,6 +60,15 @@ public class ChatServiceTests
         public Task<IReadOnlyList<Message>> GetMessagesBySessionIdAsync(Guid sessionId)
         {
             IReadOnlyList<Message> list = Messages.Where(m => m.SessionId == sessionId).ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<IReadOnlyList<Message>> GetMessagesBySessionIdForUserAsync(Guid sessionId, Guid userId)
+        {
+            bool ownsSession = Sessions.Any(s => s.SessionId == sessionId && s.UserId == userId);
+            IReadOnlyList<Message> list = ownsSession
+                ? Messages.Where(m => m.SessionId == sessionId).OrderBy(m => m.CreatedAt).ToList()
+                : [];
             return Task.FromResult(list);
         }
     }
@@ -92,6 +121,49 @@ public class ChatServiceTests
         }
     }
 
+    private class FakeChunkRepository : IChunkRepository
+    {
+        public Task<Chunk?> GetByIdAsync(Guid chunkId) => Task.FromResult<Chunk?>(null);
+
+        public Task<IReadOnlyList<Chunk>> GetAllAsync() => Task.FromResult<IReadOnlyList<Chunk>>([]);
+
+        public Task<Chunk> CreateAsync(Chunk chunk) => Task.FromResult(chunk);
+
+        public Task<IReadOnlyList<Chunk>> GetByDocumentIdAsync(Guid documentId) =>
+            Task.FromResult<IReadOnlyList<Chunk>>([]);
+
+        public Task<bool> DeleteAsync(Guid chunkId) => Task.FromResult(false);
+
+        public IQueryable<Chunk> Query() => Array.Empty<Chunk>().AsQueryable();
+    }
+
+    private class FakeUnitOfWork : IUnitOfWork
+    {
+        public FakeUnitOfWork(
+            IConversationRepository conversations,
+            IDocumentRepository documents,
+            IChunkRepository? chunks = null)
+        {
+            Conversations = conversations;
+            Documents = documents;
+            Chunks = chunks ?? new FakeChunkRepository();
+        }
+
+        public IDocumentRepository Documents { get; }
+
+        public IChunkRepository Chunks { get; }
+
+        public IConversationRepository Conversations { get; }
+
+        public int SaveCount { get; private set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCount++;
+            return Task.FromResult(1);
+        }
+    }
+
     private class FakeRetrievalService : IRetrievalService
     {
         public List<RetrievalResult> ResultsToReturn { get; set; } = new();
@@ -125,7 +197,7 @@ public class ChatServiceTests
         var docRepo = new FakeDocumentRepository();
         var ret = new FakeRetrievalService();
         var gemini = new FakeGeminiService();
-        var chatService = new ChatService(repo, docRepo, ret, gemini, NullLogger<ChatService>.Instance);
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => chatService.QueryAsync(null!));
     }
@@ -137,7 +209,7 @@ public class ChatServiceTests
         var docRepo = new FakeDocumentRepository();
         var ret = new FakeRetrievalService();
         var gemini = new FakeGeminiService();
-        var chatService = new ChatService(repo, docRepo, ret, gemini, NullLogger<ChatService>.Instance);
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
 
         var request = new ChatQueryRequest
         {
@@ -156,7 +228,7 @@ public class ChatServiceTests
         var docRepo = new FakeDocumentRepository();
         var ret = new FakeRetrievalService();
         var gemini = new FakeGeminiService();
-        var chatService = new ChatService(repo, docRepo, ret, gemini, NullLogger<ChatService>.Instance);
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
 
         var userId = Guid.NewGuid();
         var request = new ChatQueryRequest
@@ -194,7 +266,7 @@ public class ChatServiceTests
         var docRepo = new FakeDocumentRepository();
         var ret = new FakeRetrievalService();
         var gemini = new FakeGeminiService();
-        var chatService = new ChatService(repo, docRepo, ret, gemini, NullLogger<ChatService>.Instance);
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
 
         var userId = Guid.NewGuid();
         var sessionId = Guid.NewGuid();
@@ -221,6 +293,84 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task QueryAsync_ForeignSession_ThrowsUnauthorizedAccessException()
+    {
+        var repo = new FakeConversationRepository();
+        var docRepo = new FakeDocumentRepository();
+        var ret = new FakeRetrievalService();
+        var gemini = new FakeGeminiService();
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
+
+        var sessionId = Guid.NewGuid();
+        repo.Sessions.Add(new Session { SessionId = sessionId, UserId = Guid.NewGuid() });
+
+        var request = new ChatQueryRequest
+        {
+            SessionId = sessionId,
+            UserId = Guid.NewGuid(),
+            Message = "Hello"
+        };
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => chatService.QueryAsync(request));
+        Assert.Empty(repo.Messages);
+    }
+
+    [Fact]
+    public async Task GetHistoryAsync_ReturnsOnlyCurrentUserSessionsWithTitle()
+    {
+        var repo = new FakeConversationRepository();
+        var docRepo = new FakeDocumentRepository();
+        var ret = new FakeRetrievalService();
+        var gemini = new FakeGeminiService();
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
+
+        var userId = Guid.NewGuid();
+        var ownSessionId = Guid.NewGuid();
+        var foreignSessionId = Guid.NewGuid();
+        repo.Sessions.Add(new Session { SessionId = ownSessionId, UserId = userId, StartedAt = new DateTime(2026, 6, 2, 8, 0, 0) });
+        repo.Sessions.Add(new Session { SessionId = foreignSessionId, UserId = Guid.NewGuid(), StartedAt = new DateTime(2026, 6, 2, 9, 0, 0) });
+        repo.Messages.Add(new Message
+        {
+            MessageId = Guid.NewGuid(),
+            SessionId = ownSessionId,
+            SenderRole = "user",
+            MessageContent = "Explain uploaded lecture notes",
+            CreatedAt = new DateTime(2026, 6, 2, 8, 1, 0)
+        });
+        repo.Messages.Add(new Message
+        {
+            MessageId = Guid.NewGuid(),
+            SessionId = foreignSessionId,
+            SenderRole = "user",
+            MessageContent = "Foreign message",
+            CreatedAt = new DateTime(2026, 6, 2, 9, 1, 0)
+        });
+
+        IReadOnlyList<ChatSessionHistoryDto> history = await chatService.GetHistoryAsync(userId);
+
+        var item = Assert.Single(history);
+        Assert.Equal(ownSessionId, item.SessionId);
+        Assert.Equal("Explain uploaded lecture notes", item.Title);
+        Assert.Equal(1, item.MessageCount);
+    }
+
+    [Fact]
+    public async Task GetSessionMessagesAsync_ForeignSession_ThrowsUnauthorizedAccessException()
+    {
+        var repo = new FakeConversationRepository();
+        var docRepo = new FakeDocumentRepository();
+        var ret = new FakeRetrievalService();
+        var gemini = new FakeGeminiService();
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
+
+        var sessionId = Guid.NewGuid();
+        repo.Sessions.Add(new Session { SessionId = sessionId, UserId = Guid.NewGuid() });
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            chatService.GetSessionMessagesAsync(Guid.NewGuid(), sessionId));
+    }
+
+    [Fact]
     public async Task QueryAsync_ResolvesCitationsWithDocumentTitles()
     {
         // Arrange
@@ -228,7 +378,7 @@ public class ChatServiceTests
         var docRepo = new FakeDocumentRepository();
         var ret = new FakeRetrievalService();
         var gemini = new FakeGeminiService();
-        var chatService = new ChatService(repo, docRepo, ret, gemini, NullLogger<ChatService>.Instance);
+        var chatService = new ChatService(new FakeUnitOfWork(repo, docRepo), ret, gemini, NullLogger<ChatService>.Instance);
 
         var docId = Guid.NewGuid();
         var doc = new Document { DocumentId = docId, Title = "Q3 Earnings Report" };
@@ -252,6 +402,8 @@ public class ChatServiceTests
         Assert.Equal(3, response.Citations[0].PageNo);
         Assert.Equal(12, response.Citations[0].ChunkIndex);
         Assert.Equal(0.85f, response.Citations[0].Score);
+        Assert.Equal("Relevant financial info...", response.Citations[0].ChunkPreview);
+        Assert.Equal("Relevant financial info...", response.Citations[0].ChunkContent);
 
         // Check if correct context format was generated
         Assert.Contains("[Source 1 - Page 3]:\nRelevant financial info...", gemini.LastContext);

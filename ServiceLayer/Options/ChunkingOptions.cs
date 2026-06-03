@@ -9,15 +9,15 @@ public sealed class ChunkingOptions
 
     /// <summary>
     /// The maximum length of a text chunk in characters.
-    /// Recommended default is 1000.
+    /// Recommended default is 1400.
     /// </summary>
-    public int ChunkSize { get; set; } = 1000;
+    public int ChunkSize { get; set; } = 1400;
 
     /// <summary>
     /// The number of characters that overlap between adjacent chunks.
-    /// Recommended default is 100.
+    /// Recommended default is 180.
     /// </summary>
-    public int ChunkOverlap { get; set; } = 100;
+    public int ChunkOverlap { get; set; } = 180;
 
     /// <summary>
     /// The ordered list of separators to split on, from highest priority to lowest.

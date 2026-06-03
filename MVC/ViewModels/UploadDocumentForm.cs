@@ -15,6 +15,9 @@ public class UploadDocumentForm
     /// <summary>Optional target chapter id. When omitted, a default "Uploads" chapter is used.</summary>
     public Guid? ChapterId { get; set; }
 
+    [Required(ErrorMessage = "A subject is required.")]
+    public Guid? SubjectId { get; set; }
+
     /// <summary>Optional display title. Defaults to the uploaded file name.</summary>
     [StringLength(255, ErrorMessage = "Title cannot exceed 255 characters.")]
     public string? Title { get; set; }

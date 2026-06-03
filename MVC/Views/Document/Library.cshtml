@@ -14,6 +14,31 @@
     </a>
 </div>
 
+<form asp-action="Library" method="get" class="mb-4" role="search">
+    <div class="input-group shadow-sm">
+        <span class="input-group-text bg-white border-end-0">
+            <span class="material-icons text-secondary" aria-hidden="true">search</span>
+        </span>
+        <input
+            type="search"
+            name="searchTerm"
+            value="@Model.SearchTerm"
+            class="form-control border-start-0"
+            maxlength="100"
+            placeholder="Search by file name, type, status, or exact document id"
+            aria-label="Search documents" />
+        @if (Model.HasSearch)
+        {
+            <a asp-action="Library" class="btn btn-outline-secondary d-inline-flex align-items-center gap-1">
+                <span class="material-icons" aria-hidden="true">close</span> Clear
+            </a>
+        }
+        <button type="submit" class="btn btn-primary d-inline-flex align-items-center gap-1">
+            <span class="material-icons" aria-hidden="true">search</span> Search
+        </button>
+    </div>
+</form>
+
 @if (TempData["Success"] is string success)
 {
     <div class="alert alert-success">@success</div>
@@ -28,12 +53,23 @@
         @if (Model.Documents.Count == 0)
         {
             <div class="p-5 text-center">
-                <span class="material-icons text-primary mb-3" style="font-size: 48px;">folder_open</span>
-                <h3 class="h5 fw-bold">No documents yet</h3>
-                <p class="text-secondary mb-4">Upload a PDF or DOCX document to start processing it for AI analysis.</p>
-                <a asp-action="Upload" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
-                    <span class="material-icons">cloud_upload</span> Upload Document
-                </a>
+                <span class="material-icons text-primary mb-3" style="font-size: 48px;">@(Model.HasSearch ? "manage_search" : "folder_open")</span>
+                @if (Model.HasSearch)
+                {
+                    <h3 class="h5 fw-bold">No matching documents</h3>
+                    <p class="text-secondary mb-4">No documents match "@Model.SearchTerm". Try another file name, type, status, or document id.</p>
+                    <a asp-action="Library" class="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+                        <span class="material-icons">close</span> Clear Search
+                    </a>
+                }
+                else
+                {
+                    <h3 class="h5 fw-bold">No documents yet</h3>
+                    <p class="text-secondary mb-4">Upload a PDF or DOCX document to start processing it for AI analysis.</p>
+                    <a asp-action="Upload" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+                        <span class="material-icons">cloud_upload</span> Upload Document
+                    </a>
+                }
             </div>
         }
         else
@@ -43,9 +79,11 @@
                     <thead class="bg-light">
                         <tr>
                             <th class="ps-4 py-3 text-uppercase text-secondary small fw-bold" style="width: 40%;">File Name</th>
+                            <th class="py-3 text-uppercase text-secondary small fw-bold">Subject</th>
                             <th class="py-3 text-uppercase text-secondary small fw-bold">Type</th>
                             <th class="py-3 text-uppercase text-secondary small fw-bold">Date Uploaded</th>
                             <th class="py-3 text-uppercase text-secondary small fw-bold">Status</th>
+                            <th class="py-3 text-uppercase text-secondary small fw-bold text-end">Actions</th>
                             <th class="pe-4 py-3 text-uppercase text-secondary small fw-bold text-end">Document Id</th>
                         </tr>
                     </thead>
@@ -63,12 +101,28 @@
                                         <span class="fw-medium">@document.Title</span>
                                     </div>
                                 </td>
+                                <td class="py-3">
+                                    <div class="fw-semibold small">@document.SubjectCode</div>
+                                    <div class="text-secondary small">@document.SubjectName</div>
+                                </td>
                                 <td class="py-3 text-secondary small">@document.TypeLabel</td>
                                 <td class="py-3 text-secondary small">
                                     @(document.CreatedAt?.ToString("MMM d, yyyy HH:mm") ?? "Pending")
                                 </td>
                                 <td class="py-3" data-status-cell>
                                     <span class="status-badge @document.StatusBadgeClass text-capitalize" data-status-badge>@document.Status</span>
+                                </td>
+                                <td class="py-3 text-end">
+                                    <div class="d-inline-flex align-items-center gap-2">
+                                        <a asp-action="ViewDocument" asp-route-documentId="@document.DocumentId" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1">
+                                            <span class="material-icons" style="font-size: 18px;">visibility</span>
+                                            View
+                                        </a>
+                                        <a asp-action="Download" asp-route-documentId="@document.DocumentId" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1">
+                                            <span class="material-icons" style="font-size: 18px;">download</span>
+                                            Download
+                                        </a>
+                                    </div>
                                 </td>
                                 <td class="pe-4 py-3 text-end text-secondary small">
                                     @document.DocumentId

@@ -35,6 +35,8 @@ public partial class Prn222Context : DbContext
 
     public virtual DbSet<Teacher> Teachers { get; set; }
 
+    public virtual DbSet<TeacherSubject> TeacherSubjects { get; set; }
+
     public virtual DbSet<TestQuestion> TestQuestions { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
@@ -173,10 +175,13 @@ public partial class Prn222Context : DbContext
 
             entity.HasIndex(e => e.ChapterId, "idx_documents_chapter");
 
+            entity.HasIndex(e => e.SubjectId, "idx_documents_subject");
+
             entity.Property(e => e.DocumentId)
                 .HasDefaultValueSql("uuid_generate_v4()")
                 .HasColumnName("document_id");
             entity.Property(e => e.ChapterId).HasColumnName("chapter_id");
+            entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
@@ -198,6 +203,10 @@ public partial class Prn222Context : DbContext
             entity.HasOne(d => d.Chapter).WithMany(p => p.Documents)
                 .HasForeignKey(d => d.ChapterId)
                 .HasConstraintName("fk_document_chapter");
+
+            entity.HasOne(d => d.Subject).WithMany(p => p.Documents)
+                .HasForeignKey(d => d.SubjectId)
+                .HasConstraintName("fk_document_subject");
 
             entity.HasOne(d => d.UploadedByNavigation).WithMany(p => p.Documents)
                 .HasForeignKey(d => d.UploadedBy)
@@ -310,6 +319,38 @@ public partial class Prn222Context : DbContext
             entity.Property(e => e.SubjectName)
                 .HasMaxLength(255)
                 .HasColumnName("subject_name");
+        });
+
+        modelBuilder.Entity<TeacherSubject>(entity =>
+        {
+            entity.HasKey(e => e.TeacherSubjectId).HasName("teacher_subjects_pkey");
+
+            entity.ToTable("teacher_subjects");
+
+            entity.HasIndex(e => new { e.TeacherId, e.SubjectId }, "teacher_subjects_teacher_subject_key").IsUnique();
+            entity.HasIndex(e => e.SubjectId, "idx_teacher_subjects_subject");
+            entity.HasIndex(e => e.TeacherId, "idx_teacher_subjects_teacher");
+
+            entity.Property(e => e.TeacherSubjectId)
+                .HasDefaultValueSql("uuid_generate_v4()")
+                .HasColumnName("teacher_subject_id");
+            entity.Property(e => e.TeacherId).HasColumnName("teacher_id");
+            entity.Property(e => e.SubjectId).HasColumnName("subject_id");
+            entity.Property(e => e.IsHeadOfDepartment)
+                .HasDefaultValue(false)
+                .HasColumnName("is_head_of_department");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Teacher).WithMany(p => p.TeacherSubjects)
+                .HasForeignKey(d => d.TeacherId)
+                .HasConstraintName("fk_teacher_subject_teacher");
+
+            entity.HasOne(d => d.Subject).WithMany(p => p.TeacherSubjects)
+                .HasForeignKey(d => d.SubjectId)
+                .HasConstraintName("fk_teacher_subject_subject");
         });
 
         modelBuilder.Entity<Teacher>(entity =>

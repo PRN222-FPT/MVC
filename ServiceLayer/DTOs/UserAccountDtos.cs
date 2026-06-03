@@ -29,14 +29,19 @@ public sealed record AdminUserListItemDto(
     string Email,
     string Role,
     bool IsBlocked,
-    DateTime? CreatedAt);
+    DateTime? CreatedAt,
+    string? AssignedSubjectCode = null,
+    string? AssignedSubjectName = null,
+    bool IsHeadOfDepartment = false);
 
 public sealed record CreateManagedUserDto(
     string FullName,
     string Email,
     string Password,
     string Role,
-    string? Department);
+    string? Department,
+    Guid? SubjectId = null,
+    bool IsHeadOfDepartment = false);
 
 public sealed record CreateManagedUserResultDto(
     bool Succeeded,

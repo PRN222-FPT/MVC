@@ -17,3 +17,17 @@ public sealed class ChatQueryResponse
     public List<CitationDto> Citations { get; set; } = new();
     public long LatencyMs { get; set; }
 }
+
+public sealed record ChatSessionHistoryDto(
+    Guid SessionId,
+    DateTime? StartedAt,
+    DateTime? LastMessageAt,
+    string Title,
+    int MessageCount);
+
+public sealed record ChatMessageHistoryDto(
+    Guid MessageId,
+    Guid SessionId,
+    string SenderRole,
+    string MessageContent,
+    DateTime? CreatedAt);

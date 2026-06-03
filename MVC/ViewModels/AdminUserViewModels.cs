@@ -19,6 +19,8 @@ public sealed class AdminUsersIndexViewModel
     public int BlockedCount => Users.Count(u => u.IsBlocked);
 
     public Guid? CurrentAdminUserId { get; set; }
+
+    public IEnumerable<SelectListItem> SubjectOptions { get; set; } = [];
 }
 
 public sealed class AdminUserListItemViewModel
@@ -34,6 +36,12 @@ public sealed class AdminUserListItemViewModel
     public bool IsBlocked { get; set; }
 
     public DateTime? CreatedAt { get; set; }
+
+    public string? AssignedSubjectCode { get; set; }
+
+    public string? AssignedSubjectName { get; set; }
+
+    public bool IsHeadOfDepartment { get; set; }
 }
 
 public sealed class CreateUserViewModel
@@ -57,6 +65,10 @@ public sealed class CreateUserViewModel
 
     [StringLength(255, ErrorMessage = "Department cannot exceed 255 characters.")]
     public string? Department { get; set; }
+
+    public Guid? SubjectId { get; set; }
+
+    public bool IsHeadOfDepartment { get; set; }
 
     public IEnumerable<SelectListItem> RoleOptions { get; set; } =
     [

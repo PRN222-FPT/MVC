@@ -88,8 +88,9 @@ public class RetrievalServiceTests
         {
             new QdrantSearchResult(docId, 1, "Chunk 1", 0, 0.85f),
             new QdrantSearchResult(docId, 1, "Chunk 2", 1, 0.70f),
-            new QdrantSearchResult(docId, 2, "Chunk 3", 2, 0.60f), // Borderline passes threshold
-            new QdrantSearchResult(docId, 2, "Chunk 4", 3, 0.59f), // Fails threshold
+            new QdrantSearchResult(docId, 2, "Chunk 3", 2, 0.65f), // Borderline passes threshold
+            new QdrantSearchResult(docId, 2, "Chunk 4", 3, 0.64f), // Passes expansion threshold
+            new QdrantSearchResult(docId, 3, "Chunk 5", 4, 0.57f), // Fails expansion threshold
             new QdrantSearchResult(docId, 3, "Chunk 5", 4, 0.40f)  // Fails threshold
         };
         var qdrant = new FakeQdrantService(searchResults);
@@ -104,18 +105,88 @@ public class RetrievalServiceTests
         Assert.NotNull(embedding.LastInputs);
         Assert.Equal("search query", embedding.LastInputs[0]);
         Assert.True(qdrant.SearchCalled);
-        Assert.Equal(10, qdrant.LastLimit); // Check if search limit is 10
+        Assert.Equal(30, qdrant.LastLimit);
         
-        // Assert filtered results: only first 3 pass threshold >= 0.60
-        Assert.Equal(3, results.Count);
-        Assert.All(results, r => Assert.True(r.Score >= 0.60f));
+        // Strong matches select the document; context expansion keeps additional
+        // same-document chunks down to the lower expansion threshold.
+        Assert.Equal(4, results.Count);
+        Assert.All(results, r => Assert.True(r.Score >= 0.58f));
         Assert.Equal("Chunk 1", results[0].ChunkText);
         Assert.Equal("Chunk 2", results[1].ChunkText);
         Assert.Equal("Chunk 3", results[2].ChunkText);
+        Assert.Equal("Chunk 4", results[3].ChunkText);
     }
 
     [Fact]
-    public async Task RetrieveContextAsync_MoreThanFiveMatches_ClampsToTopFive()
+    public async Task RetrieveContextAsync_OverviewQuestion_ExpandsSearchQueryWithGeneralContextTerms()
+    {
+        // Arrange
+        var embedding = new FakeEmbeddingService();
+        var docId = Guid.NewGuid();
+        var searchResults = new List<QdrantSearchResult>
+        {
+            new QdrantSearchResult(docId, 1, "PRN222 course overview", 0, 0.85f)
+        };
+        var qdrant = new FakeQdrantService(searchResults);
+        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+
+        // Act
+        var results = await service.RetrieveContextAsync("Introduce PRN222 to me");
+
+        // Assert
+        Assert.Single(results);
+        Assert.NotNull(embedding.LastInputs);
+        string retrievalQuery = Assert.Single(embedding.LastInputs);
+        Assert.Contains("Introduce PRN222 to me", retrievalQuery);
+        Assert.Contains("introduction", retrievalQuery);
+        Assert.Contains("overview", retrievalQuery);
+        Assert.Contains("learning objectives", retrievalQuery);
+    }
+
+    [Fact]
+    public async Task RetrieveContextAsync_TellMeAboutQuestion_ExpandsSearchQueryWithoutSubjectSpecificHardCoding()
+    {
+        // Arrange
+        var embedding = new FakeEmbeddingService();
+        var docId = Guid.NewGuid();
+        var searchResults = new List<QdrantSearchResult>
+        {
+            new QdrantSearchResult(docId, 1, "Authentication overview", 0, 0.85f)
+        };
+        var qdrant = new FakeQdrantService(searchResults);
+        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+
+        // Act
+        var results = await service.RetrieveContextAsync("Tell me about authentication");
+
+        // Assert
+        Assert.Single(results);
+        Assert.NotNull(embedding.LastInputs);
+        string retrievalQuery = Assert.Single(embedding.LastInputs);
+        Assert.Contains("Tell me about authentication", retrievalQuery);
+        Assert.Contains("description", retrievalQuery);
+        Assert.DoesNotContain("PRN222", retrievalQuery);
+    }
+
+    [Fact]
+    public async Task RetrieveContextAsync_NonPrn222Question_UsesOriginalSearchQuery()
+    {
+        // Arrange
+        var embedding = new FakeEmbeddingService();
+        var qdrant = new FakeQdrantService(new List<QdrantSearchResult>());
+        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+
+        // Act
+        await service.RetrieveContextAsync("What is the grading policy?");
+
+        // Assert
+        Assert.NotNull(embedding.LastInputs);
+        string retrievalQuery = Assert.Single(embedding.LastInputs);
+        Assert.Equal("What is the grading policy?", retrievalQuery);
+    }
+
+    [Fact]
+    public async Task RetrieveContextAsync_MoreThanSixMatches_ClampsToTopSix()
     {
         // Arrange
         var embedding = new FakeEmbeddingService();
@@ -133,10 +204,85 @@ public class RetrievalServiceTests
         var results = await service.RetrieveContextAsync("query");
 
         // Assert
-        Assert.Equal(5, results.Count); // Capped to top-5
-        for (int i = 0; i < 5; i++)
+        Assert.Equal(6, results.Count); // Capped to top-6
+        for (int i = 0; i < 6; i++)
         {
             Assert.Equal($"Chunk {i + 1}", results[i].ChunkText);
         }
+    }
+
+    [Fact]
+    public async Task RetrieveContextAsync_NormalQuestion_ExpandsContextWithinDominantDocument()
+    {
+        // Arrange
+        var embedding = new FakeEmbeddingService();
+        var dominantDocId = Guid.NewGuid();
+        var competingDocId = Guid.NewGuid();
+        var searchResults = new List<QdrantSearchResult>
+        {
+            new QdrantSearchResult(dominantDocId, 1, "Strong dominant chunk", 0, 0.88f),
+            new QdrantSearchResult(dominantDocId, 2, "Expanded dominant chunk", 1, 0.59f),
+            new QdrantSearchResult(competingDocId, 1, "Competing expanded chunk", 0, 0.58f)
+        };
+        var qdrant = new FakeQdrantService(searchResults);
+        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+
+        // Act
+        var results = await service.RetrieveContextAsync("What are the requirements?");
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.All(results, result => Assert.Equal(dominantDocId, result.DocumentId));
+        Assert.Contains(results, result => result.ChunkText == "Expanded dominant chunk");
+    }
+
+    [Fact]
+    public async Task RetrieveContextAsync_NormalQuestion_PrefersDominantDocument()
+    {
+        // Arrange
+        var embedding = new FakeEmbeddingService();
+        var dominantDocId = Guid.NewGuid();
+        var competingDocId = Guid.NewGuid();
+        var searchResults = new List<QdrantSearchResult>
+        {
+            new QdrantSearchResult(competingDocId, 1, "Competing top chunk", 0, 0.91f),
+            new QdrantSearchResult(dominantDocId, 1, "Dominant chunk 1", 0, 0.89f),
+            new QdrantSearchResult(dominantDocId, 2, "Dominant chunk 2", 1, 0.88f),
+            new QdrantSearchResult(dominantDocId, 3, "Dominant chunk 3", 2, 0.87f),
+            new QdrantSearchResult(competingDocId, 2, "Competing weaker chunk", 1, 0.66f)
+        };
+        var qdrant = new FakeQdrantService(searchResults);
+        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+
+        // Act
+        var results = await service.RetrieveContextAsync("What is the grading policy?");
+
+        // Assert
+        Assert.Equal(3, results.Count);
+        Assert.All(results, result => Assert.Equal(dominantDocId, result.DocumentId));
+    }
+
+    [Fact]
+    public async Task RetrieveContextAsync_ComparisonQuestion_AllowsMultipleDocuments()
+    {
+        // Arrange
+        var embedding = new FakeEmbeddingService();
+        var firstDocId = Guid.NewGuid();
+        var secondDocId = Guid.NewGuid();
+        var searchResults = new List<QdrantSearchResult>
+        {
+            new QdrantSearchResult(firstDocId, 1, "First document chunk", 0, 0.90f),
+            new QdrantSearchResult(secondDocId, 1, "Second document chunk", 0, 0.88f)
+        };
+        var qdrant = new FakeQdrantService(searchResults);
+        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+
+        // Act
+        var results = await service.RetrieveContextAsync("Compare these documents");
+
+        // Assert
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, result => result.DocumentId == firstDocId);
+        Assert.Contains(results, result => result.DocumentId == secondDocId);
     }
 }

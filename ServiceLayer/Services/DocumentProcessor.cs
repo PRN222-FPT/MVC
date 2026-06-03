@@ -1,5 +1,5 @@
 using DataAccessLayer.Models;
-using DataAccessLayer.Repositories;
+using DataAccessLayer.UnitOfWork;
 using DocumentParser.Ocr;
 using DocumentParser.Parsers;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +18,7 @@ namespace ServiceLayer.Services;
 public sealed class DocumentProcessor : IDocumentProcessor
 {
     private readonly Prn222Context _context;
-    private readonly IDocumentRepository _documentRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IStorageService _storageService;
     private readonly IRecursiveChunkingService _chunkingService;
     private readonly IEmbeddingService _embeddingService;
@@ -28,7 +28,7 @@ public sealed class DocumentProcessor : IDocumentProcessor
 
     public DocumentProcessor(
         Prn222Context context,
-        IDocumentRepository documentRepository,
+        IUnitOfWork unitOfWork,
         IStorageService storageService,
         IRecursiveChunkingService chunkingService,
         IEmbeddingService embeddingService,
@@ -37,7 +37,7 @@ public sealed class DocumentProcessor : IDocumentProcessor
         ILogger<DocumentProcessor> logger)
     {
         _context = context;
-        _documentRepository = documentRepository;
+        _unitOfWork = unitOfWork;
         _storageService = storageService;
         _chunkingService = chunkingService;
         _embeddingService = embeddingService;
@@ -59,11 +59,11 @@ public sealed class DocumentProcessor : IDocumentProcessor
             {
                 job.JobStatus = "processing";
                 job.StartedAt = UnspecifiedNow();
-                await _context.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
 
             // 1. Fetch document metadata
-            var document = await _documentRepository.GetByIdAsync(documentId);
+            var document = await _unitOfWork.Documents.GetByIdAsync(documentId);
             if (document is null)
             {
                 throw new KeyNotFoundException($"Document with ID '{documentId}' was not found.");
@@ -215,7 +215,7 @@ public sealed class DocumentProcessor : IDocumentProcessor
             _context.Chunks.RemoveRange(existingChunks);
             await _context.Chunks.AddRangeAsync(newChunks, cancellationToken);
 
-            await _documentRepository.UpdateStatusAsync(documentId, "completed");
+            await _unitOfWork.Documents.UpdateStatusAsync(documentId, "completed");
 
             if (job is not null)
             {
@@ -223,7 +223,7 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 job.FinishedAt = UnspecifiedNow();
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             _logger.LogInformation("Document {DocumentId} processed into {ChunkCount} chunks and upserted to Qdrant", documentId, newChunks.Count);
         }
         catch (Exception ex)
@@ -239,8 +239,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
 
             try
             {
-                await _documentRepository.UpdateStatusAsync(documentId, "failed");
-                await _context.SaveChangesAsync(CancellationToken.None);
+                await _unitOfWork.Documents.UpdateStatusAsync(documentId, "failed");
+                await _unitOfWork.SaveChangesAsync(CancellationToken.None);
             }
             catch (Exception dbEx)
             {

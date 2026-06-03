@@ -1,0 +1,98 @@
+@model MVC.ViewModels.SubjectsIndexViewModel
+
+@{
+    ViewData["Title"] = "Subjects";
+}
+
+<div class="d-flex flex-column gap-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <p class="text-secondary fw-bold text-uppercase mb-1" style="font-size: 11px; letter-spacing: .08em;">Admin Console</p>
+            <h1 class="h3 fw-bold mb-1">Subjects</h1>
+            <p class="text-secondary mb-0">Create subjects that teachers can be assigned to.</p>
+        </div>
+    </div>
+
+    @if (TempData["Success"] is string success)
+    {
+        <div class="alert alert-success mb-0">@success</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-xl-4">
+            <div class="bg-white border rounded-3 p-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="material-icons text-primary">add_circle</span>
+                    <h2 class="h5 fw-bold mb-0">Create Subject</h2>
+                </div>
+
+                <form asp-action="Create" method="post" class="d-flex flex-column gap-3">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+                    <div>
+                        <label asp-for="CreateSubject.SubjectCode" class="form-label small fw-bold text-secondary">Subject Code</label>
+                        <input asp-for="CreateSubject.SubjectCode" class="form-control" placeholder="PRN222" />
+                        <span asp-validation-for="CreateSubject.SubjectCode" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateSubject.SubjectName" class="form-label small fw-bold text-secondary">Subject Name</label>
+                        <input asp-for="CreateSubject.SubjectName" class="form-control" placeholder="Advanced .NET" />
+                        <span asp-validation-for="CreateSubject.SubjectName" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateSubject.Description" class="form-label small fw-bold text-secondary">Description</label>
+                        <textarea asp-for="CreateSubject.Description" class="form-control" rows="4"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                        <span class="material-icons" style="font-size: 20px;">add</span>
+                        Create Subject
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-xl-8">
+            <div class="bg-white border rounded-3 overflow-hidden">
+                <div class="p-4 border-bottom d-flex align-items-center justify-content-between">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1">Subject Catalog</h2>
+                        <p class="text-secondary small mb-0">Subjects available for teacher assignment.</p>
+                    </div>
+                    <span class="badge text-bg-light border">@Model.Subjects.Count subjects</span>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">Code</th>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th class="pe-4">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var subject in Model.Subjects)
+                            {
+                                <tr>
+                                    <td class="ps-4 fw-bold">@subject.SubjectCode</td>
+                                    <td>@subject.SubjectName</td>
+                                    <td class="text-secondary small">@(subject.Description ?? "None")</td>
+                                    <td class="pe-4 text-secondary small">@(subject.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "Unknown")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

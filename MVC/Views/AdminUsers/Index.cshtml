@@ -104,6 +104,21 @@
                         <span asp-validation-for="CreateUser.Department" class="text-danger small"></span>
                     </div>
 
+                    <div>
+                        <label asp-for="CreateUser.SubjectId" class="form-label small fw-bold text-secondary">Teacher Subject</label>
+                        <select asp-for="CreateUser.SubjectId" asp-items="Model.SubjectOptions" class="form-select">
+                            <option value="">Select when role is Teacher</option>
+                        </select>
+                        <span asp-validation-for="CreateUser.SubjectId" class="text-danger small"></span>
+                    </div>
+
+                    <div class="form-check">
+                        <input asp-for="CreateUser.IsHeadOfDepartment" class="form-check-input" />
+                        <label asp-for="CreateUser.IsHeadOfDepartment" class="form-check-label small fw-semibold">
+                            Head of Department
+                        </label>
+                    </div>
+
                     <button type="submit" class="btn btn-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2">
                         <span class="material-icons" style="font-size: 20px;">add</span>
                         Create Account
@@ -128,6 +143,7 @@
                             <tr>
                                 <th class="ps-4">User</th>
                                 <th>Role</th>
+                                <th>Subject</th>
                                 <th>Status</th>
                                 <th>Created</th>
                                 <th class="pe-4 text-end">Action</th>
@@ -150,6 +166,21 @@
                                     </td>
                                     <td>
                                         <span class="badge @badgeClass text-capitalize">@user.Role</span>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(user.AssignedSubjectCode))
+                                        {
+                                            <div class="fw-semibold">@user.AssignedSubjectCode</div>
+                                            <div class="text-secondary small">@user.AssignedSubjectName</div>
+                                            @if (user.IsHeadOfDepartment)
+                                            {
+                                                <span class="badge text-bg-info mt-1">Head</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary small">None</span>
+                                        }
                                     </td>
                                     <td>
                                         @if (user.IsBlocked)
