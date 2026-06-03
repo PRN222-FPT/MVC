@@ -1,0 +1,40 @@
+@model MVC.ViewModels.DocumentViewerViewModel
+
+@{
+    ViewData["Title"] = Model.Title;
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+    <div>
+        <h2 class="display-6 fw-bold mb-1">@Model.Title</h2>
+        <p class="text-secondary mb-0">@Model.FileName</p>
+    </div>
+    <div class="d-inline-flex align-items-center gap-2">
+        <a asp-action="Library" class="btn btn-outline-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+            <span class="material-icons">library_books</span> Back to Library
+        </a>
+        <a href="@Model.DownloadUrl" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+            <span class="material-icons">download</span> Download
+        </a>
+    </div>
+</div>
+
+<div class="card border-light shadow-sm rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        @if (Model.CanPreviewInline)
+        {
+            <iframe src="@Model.InlineUrl" title="@Model.Title" class="w-100 border-0" style="height: calc(100vh - 220px); min-height: 640px;"></iframe>
+        }
+        else
+        {
+            <div class="p-5 text-center">
+                <span class="material-icons text-primary mb-3" style="font-size: 56px;">description</span>
+                <h3 class="h5 fw-bold">Inline preview is not available for this file type</h3>
+                <p class="text-secondary mb-4">This document is stored and available for download.</p>
+                <a href="@Model.DownloadUrl" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+                    <span class="material-icons">download</span> Download Document
+                </a>
+            </div>
+        }
+    </div>
+</div>

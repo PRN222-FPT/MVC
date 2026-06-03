@@ -33,7 +33,6 @@ public class ChunkRepository : IChunkRepository
         ArgumentNullException.ThrowIfNull(chunk);
 
         await _context.Chunks.AddAsync(chunk);
-        await _context.SaveChangesAsync();
 
         return chunk;
     }
@@ -56,7 +55,6 @@ public class ChunkRepository : IChunkRepository
         }
 
         _context.Chunks.Remove(chunk);
-        await _context.SaveChangesAsync();
 
         return true;
     }

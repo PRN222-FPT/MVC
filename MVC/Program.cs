@@ -1,5 +1,4 @@
 using System.Reflection;
-using DataAccessLayer;
 using DataAccessLayer.Models;
 using DataAccessLayer.Repositories;
 using DataAccessLayer.UnitOfWork;
@@ -90,17 +89,14 @@ try
         connectionString = "Host=localhost;Port=5432;Database=prn222_dev;Username=postgres";
     }
 
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(connectionString));
-
     builder.Services.AddDbContext<Prn222Context>(options =>
         options.UseNpgsql(connectionString));
 
     // ----- Repositories -----
-    builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
     builder.Services.AddScoped<IChunkRepository, ChunkRepository>();
     builder.Services.AddScoped<IConversationRepository, ConversationRepository>();
+    builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
     // ----- Options -----
     builder.Services.Configure<UploadOptions>(
@@ -113,11 +109,12 @@ try
         builder.Configuration.GetSection(QdrantOptions.SectionName));
     builder.Services.Configure<GeminiOptions>(
         builder.Configuration.GetSection(GeminiOptions.SectionName));
-    string? geminiApiKey = builder.Configuration.GetSection(GeminiOptions.SectionName)["ApiKey"];
+    IConfigurationSection geminiSection = builder.Configuration.GetSection(GeminiOptions.SectionName);
+    string chatProvider = geminiSection["ChatProvider"] ?? GeminiChatProviders.Google;
+    string? geminiApiKey = geminiSection["ApiKey"];
+    string? openRouterApiKey = geminiSection.GetSection(nameof(GeminiOptions.OpenRouter))["ApiKey"];
 
     // ----- Domain services -----
-    builder.Services.AddScoped<ICategoryService, CategoryService>();
-    builder.Services.AddScoped<IProductService, ProductService>();
     builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
     builder.Services.AddScoped<IRecursiveChunkingService, RecursiveChunkingService>();
@@ -139,6 +136,7 @@ try
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
     builder.Services.AddScoped<ICitationService, CitationService>();
+    builder.Services.AddScoped<ISubjectService, SubjectService>();
 
     // ----- Qdrant Vector DB services -----
     builder.Services.AddSingleton<QdrantClient>(sp =>
@@ -152,8 +150,20 @@ try
     });
     builder.Services.AddScoped<IQdrantService, QdrantService>();
 
-    // ----- Google Gemini AI services -----
-    if (string.IsNullOrWhiteSpace(geminiApiKey))
+    // ----- Gemini-compatible chat services -----
+    if (chatProvider.Equals(GeminiChatProviders.OpenRouter, StringComparison.OrdinalIgnoreCase))
+    {
+        if (string.IsNullOrWhiteSpace(openRouterApiKey))
+        {
+            Log.Warning("Gemini:OpenRouter:ApiKey is not configured. Chat will use a development fallback response.");
+            builder.Services.AddScoped<IGeminiService, NoOpGeminiService>();
+        }
+        else
+        {
+            builder.Services.AddHttpClient<IGeminiService, OpenRouterGeminiService>();
+        }
+    }
+    else if (string.IsNullOrWhiteSpace(geminiApiKey))
     {
         Log.Warning("Gemini:ApiKey is not configured. Chat will use a development fallback response.");
         builder.Services.AddScoped<IGeminiService, NoOpGeminiService>();

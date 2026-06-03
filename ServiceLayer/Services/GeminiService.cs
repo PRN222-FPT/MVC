@@ -45,8 +45,7 @@ public sealed class GeminiService : IGeminiService
         {
             _logger.LogInformation("Generating answer for question using model {ModelName}...", _options.ModelName);
             
-            // Build context prompt
-            string contents = $"Context:\n{context}\n\nQuestion: {question}";
+            string contents = BuildPrompt(context, question);
 
             var response = await _client.Models.GenerateContentAsync(
                 model: _options.ModelName,
@@ -56,10 +55,7 @@ public sealed class GeminiService : IGeminiService
                 },
                 config: new GenerateContentConfig
                 {
-                    SystemInstruction = new Content
-                    {
-                        Parts = new List<Part> { new Part { Text = _options.SystemPrompt } }
-                    }
+                    SystemInstruction = null
                 },
                 cancellationToken: cancellationToken
             );
@@ -78,5 +74,18 @@ public sealed class GeminiService : IGeminiService
             _logger.LogError(ex, "Failed to generate answer using model '{ModelName}'", _options.ModelName);
             throw;
         }
+    }
+
+    private string BuildPrompt(string context, string question)
+    {
+        if (_options.SystemPrompt.Contains("{context}", StringComparison.OrdinalIgnoreCase) ||
+            _options.SystemPrompt.Contains("{question}", StringComparison.OrdinalIgnoreCase))
+        {
+            return _options.SystemPrompt
+                .Replace("{context}", context, StringComparison.OrdinalIgnoreCase)
+                .Replace("{question}", question, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return $"{_options.SystemPrompt}\n\nContext:\n{context}\n\nQuestion:\n{question}\nAnswer:";
     }
 }

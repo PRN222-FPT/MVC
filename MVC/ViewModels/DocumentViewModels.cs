@@ -6,6 +6,8 @@ public sealed class DocumentUploadPageViewModel
 {
     public UploadDocumentForm Form { get; set; } = new();
 
+    public IEnumerable<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> SubjectOptions { get; set; } = [];
+
     public long MaxFileSizeBytes { get; set; }
 
     public string AllowedExtensionsText { get; set; } = string.Empty;
@@ -15,7 +17,11 @@ public sealed class DocumentUploadPageViewModel
 
 public sealed class DocumentLibraryViewModel
 {
+    public string SearchTerm { get; set; } = string.Empty;
+
     public IReadOnlyList<DocumentListItemViewModel> Documents { get; set; } = [];
+
+    public bool HasSearch => !string.IsNullOrWhiteSpace(SearchTerm);
 }
 
 public sealed class DocumentListItemViewModel
@@ -27,6 +33,10 @@ public sealed class DocumentListItemViewModel
     public string FileType { get; set; } = string.Empty;
 
     public string Status { get; set; } = string.Empty;
+
+    public string SubjectCode { get; set; } = string.Empty;
+
+    public string SubjectName { get; set; } = string.Empty;
 
     public DateTime? CreatedAt { get; set; }
 
@@ -61,4 +71,23 @@ public sealed class DocumentListItemViewModel
         "queued" => "bg-warning-subtle text-warning",
         _ => "bg-primary-subtle text-primary"
     };
+}
+
+public sealed class DocumentViewerViewModel
+{
+    public Guid DocumentId { get; set; }
+
+    public string Title { get; set; } = string.Empty;
+
+    public string FileName { get; set; } = string.Empty;
+
+    public string FileType { get; set; } = string.Empty;
+
+    public string ContentType { get; set; } = string.Empty;
+
+    public string InlineUrl { get; set; } = string.Empty;
+
+    public string DownloadUrl { get; set; } = string.Empty;
+
+    public bool CanPreviewInline => FileType.Equals("pdf", StringComparison.OrdinalIgnoreCase);
 }

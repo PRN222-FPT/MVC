@@ -31,6 +31,62 @@ public class ChatController : Controller
         return View();
     }
 
+    [HttpGet("Chat/History")]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public async Task<IActionResult> History(CancellationToken cancellationToken)
+    {
+        Guid? currentUserId = TryGetCurrentUserId();
+        if (currentUserId == null)
+        {
+            return Unauthorized(new { error = "User is not authenticated." });
+        }
+
+        IReadOnlyList<ChatSessionHistoryDto> sessions = await _chatService.GetHistoryAsync(
+            currentUserId.Value,
+            cancellationToken);
+
+        return Json(sessions.Select(session => new
+        {
+            sessionId = session.SessionId,
+            startedAt = session.StartedAt,
+            lastMessageAt = session.LastMessageAt,
+            title = session.Title,
+            messageCount = session.MessageCount
+        }).ToList());
+    }
+
+    [HttpGet("Chat/Sessions/{sessionId:guid}/Messages")]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
+    public async Task<IActionResult> Messages(Guid sessionId, CancellationToken cancellationToken)
+    {
+        Guid? currentUserId = TryGetCurrentUserId();
+        if (currentUserId == null)
+        {
+            return Unauthorized(new { error = "User is not authenticated." });
+        }
+
+        try
+        {
+            IReadOnlyList<ChatMessageHistoryDto> messages = await _chatService.GetSessionMessagesAsync(
+                currentUserId.Value,
+                sessionId,
+                cancellationToken);
+
+            return Json(messages.Select(message => new
+            {
+                messageId = message.MessageId,
+                sessionId = message.SessionId,
+                senderRole = message.SenderRole,
+                messageContent = message.MessageContent,
+                createdAt = message.CreatedAt
+            }).ToList());
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
     [HttpPost("Chat/Query")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Query([FromBody] ChatQueryApiRequest request, CancellationToken cancellationToken)
@@ -69,10 +125,17 @@ public class ChatController : Controller
                     documentTitle = c.DocumentTitle,
                     pageNo = c.PageNo,
                     chunkIndex = c.ChunkIndex,
-                    score = c.Score
+                    score = c.Score,
+                    chunkPreview = c.ChunkPreview,
+                    chunkContent = c.ChunkContent
                 }).ToList(),
                 latency_ms = stopwatch.ElapsedMilliseconds
             });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            stopwatch.Stop();
+            return Forbid();
         }
         catch (Exception ex)
         {

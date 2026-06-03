@@ -4,7 +4,7 @@ using ServiceLayer.Interfaces;
 namespace ServiceLayer.Services;
 
 /// <summary>
-/// Development fallback used when Gemini is not configured.
+/// Development fallback used when chat generation is not configured.
 /// </summary>
 public sealed class NoOpGeminiService : IGeminiService
 {
@@ -17,8 +17,8 @@ public sealed class NoOpGeminiService : IGeminiService
 
     public Task<string> GenerateAnswerAsync(string context, string question, CancellationToken cancellationToken = default)
     {
-        _logger.LogWarning("Gemini API key is not configured. Returning a fallback chat response.");
+        _logger.LogWarning("Chat generation provider API key is not configured. Returning a fallback chat response.");
         return Task.FromResult(
-            "Gemini API key is not configured. Set Gemini:ApiKey via user-secrets or an environment variable to enable AI answers.");
+            "Chat generation is not configured. Set Gemini:OpenRouter:ApiKey for OpenRouter chat, or Gemini:ApiKey for Google chat, via user-secrets or an environment variable to enable AI answers.");
     }
 }

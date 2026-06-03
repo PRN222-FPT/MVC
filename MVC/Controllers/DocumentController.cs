@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Net.Mime;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,8 @@ namespace MVC.Controllers;
 [Route("Documents")]
 public class DocumentController : Controller
 {
+    private const int MaxSearchTermLength = 100;
+
     private readonly IDocumentService _documentService;
     private readonly UploadOptions _uploadOptions;
     private readonly ILogger<DocumentController> _logger;
@@ -37,12 +40,16 @@ public class DocumentController : Controller
     }
 
     [HttpGet("Library")]
-    public async Task<IActionResult> Library(CancellationToken cancellationToken)
+    public async Task<IActionResult> Library([FromQuery] string? searchTerm, CancellationToken cancellationToken)
     {
-        IReadOnlyList<DocumentListItemDto> documents = await _documentService.GetDocumentsAsync(cancellationToken);
+        string? normalizedSearchTerm = NormalizeSearchTerm(searchTerm);
+        IReadOnlyList<DocumentListItemDto> documents = await _documentService.GetDocumentsAsync(
+            normalizedSearchTerm,
+            cancellationToken);
 
         var viewModel = new DocumentLibraryViewModel
         {
+            SearchTerm = normalizedSearchTerm ?? string.Empty,
             Documents = documents.Select(MapDocumentListItem).ToList()
         };
 
@@ -53,7 +60,8 @@ public class DocumentController : Controller
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public async Task<IActionResult> Statuses(CancellationToken cancellationToken)
     {
-        IReadOnlyList<DocumentListItemDto> documents = await _documentService.GetDocumentsAsync(cancellationToken);
+        IReadOnlyList<DocumentListItemDto> documents = await _documentService.GetDocumentsAsync(
+            cancellationToken: cancellationToken);
 
         return Json(documents.Select(document =>
         {
@@ -69,9 +77,9 @@ public class DocumentController : Controller
     }
 
     [HttpGet("Upload")]
-    public IActionResult Upload()
+    public async Task<IActionResult> Upload(CancellationToken cancellationToken)
     {
-        return View(BuildUploadPageViewModel(new UploadDocumentForm()));
+        return View(await BuildUploadPageViewModelAsync(new UploadDocumentForm(), cancellationToken));
     }
 
     // Backward-compatible route for older sidebar links.
@@ -97,7 +105,7 @@ public class DocumentController : Controller
     {
         if (!ModelState.IsValid)
         {
-            return View(BuildUploadPageViewModel(form));
+            return View(await BuildUploadPageViewModelAsync(form, cancellationToken));
         }
 
         IFormFile file = form.File;
@@ -108,14 +116,14 @@ public class DocumentController : Controller
             ModelState.AddModelError(
                 "Form.File",
                 $"Unsupported file type '{extension}'. Allowed: {string.Join(", ", _uploadOptions.AllowedExtensions)}.");
-            return View(BuildUploadPageViewModel(form));
+            return View(await BuildUploadPageViewModelAsync(form, cancellationToken));
         }
 
         if (file.Length > _uploadOptions.MaxFileSizeBytes)
         {
             long limitMb = _uploadOptions.MaxFileSizeBytes / (1024 * 1024);
             ModelState.AddModelError("Form.File", $"File exceeds the {limitMb} MB limit.");
-            return View(BuildUploadPageViewModel(form));
+            return View(await BuildUploadPageViewModelAsync(form, cancellationToken));
         }
 
         Guid? uploadedBy = TryGetCurrentUserId();
@@ -128,6 +136,7 @@ public class DocumentController : Controller
             ContentType = file.ContentType,
             Length = file.Length,
             ChapterId = form.ChapterId,
+            SubjectId = form.SubjectId ?? Guid.Empty,
             Title = form.Title,
             UploadedBy = uploadedBy
         };
@@ -142,22 +151,92 @@ public class DocumentController : Controller
 
             TempData["Success"] = $"'{result.Title}' was uploaded and queued for processing.";
 
-            return RedirectToAction(nameof(Library));
+            return RedirectToAction(nameof(ViewDocument), new { documentId = result.DocumentId });
         }
         catch (KeyNotFoundException ex)
         {
-            ModelState.AddModelError("Form.ChapterId", ex.Message);
-            return View(BuildUploadPageViewModel(form));
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return View(await BuildUploadPageViewModelAsync(form, cancellationToken));
+        }
+        catch (InvalidOperationException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return View(await BuildUploadPageViewModelAsync(form, cancellationToken));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
+            return View(await BuildUploadPageViewModelAsync(form, cancellationToken));
         }
     }
 
-    private DocumentUploadPageViewModel BuildUploadPageViewModel(UploadDocumentForm form) =>
-        new()
+    [HttpGet("{documentId:guid}/View")]
+    public async Task<IActionResult> ViewDocument(Guid documentId, CancellationToken cancellationToken)
+    {
+        DocumentFileDto document = await _documentService.OpenDocumentFileAsync(documentId, cancellationToken);
+
+        return View("View", new DocumentViewerViewModel
+        {
+            DocumentId = document.DocumentId,
+            Title = document.Title,
+            FileName = document.FileName,
+            FileType = document.FileType,
+            ContentType = document.ContentType,
+            InlineUrl = Url.Action(nameof(Inline), new { documentId }) ?? string.Empty,
+            DownloadUrl = Url.Action(nameof(Download), new { documentId }) ?? string.Empty
+        });
+    }
+
+    [HttpGet("{documentId:guid}/Inline")]
+    public async Task<IActionResult> Inline(Guid documentId, CancellationToken cancellationToken)
+    {
+        DocumentFileDto document = await _documentService.OpenDocumentFileAsync(documentId, cancellationToken);
+        Response.Headers.Append(
+            "Content-Disposition",
+            new ContentDisposition
+            {
+                Inline = true,
+                FileName = document.FileName
+            }.ToString());
+
+        return File(document.Content, document.ContentType);
+    }
+
+    [HttpGet("{documentId:guid}/Download")]
+    public async Task<IActionResult> Download(Guid documentId, CancellationToken cancellationToken)
+    {
+        DocumentFileDto document = await _documentService.OpenDocumentFileAsync(documentId, cancellationToken);
+        return File(document.Content, document.ContentType, document.FileName);
+    }
+
+    private async Task<DocumentUploadPageViewModel> BuildUploadPageViewModelAsync(
+        UploadDocumentForm form,
+        CancellationToken cancellationToken)
+    {
+        Guid? currentUserId = TryGetCurrentUserId();
+        IReadOnlyList<TeacherUploadSubjectDto> uploadableSubjects = [];
+        if (currentUserId.HasValue)
+        {
+            try
+            {
+                uploadableSubjects = await _documentService.GetUploadableSubjectsAsync(currentUserId.Value, cancellationToken);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                uploadableSubjects = [];
+            }
+        }
+
+        return new DocumentUploadPageViewModel
         {
             Form = form,
+            SubjectOptions = uploadableSubjects.Select(subject => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem(
+                $"{subject.SubjectCode} - {subject.SubjectName}",
+                subject.SubjectId.ToString())),
             MaxFileSizeBytes = _uploadOptions.MaxFileSizeBytes,
             AllowedExtensionsText = string.Join(", ", _uploadOptions.AllowedExtensions.Select(e => e.TrimStart('.').ToUpperInvariant()))
         };
+    }
 
     private static DocumentListItemViewModel MapDocumentListItem(DocumentListItemDto document) =>
         new()
@@ -166,6 +245,8 @@ public class DocumentController : Controller
             Title = document.Title,
             FileType = document.FileType,
             Status = document.Status,
+            SubjectCode = document.SubjectCode,
+            SubjectName = document.SubjectName,
             CreatedAt = document.CreatedAt,
             FileUrl = document.FileUrl
         };
@@ -179,5 +260,18 @@ public class DocumentController : Controller
     {
         string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return Guid.TryParse(userId, out Guid parsed) ? parsed : null;
+    }
+
+    private static string? NormalizeSearchTerm(string? searchTerm)
+    {
+        string? normalized = searchTerm?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        return normalized.Length > MaxSearchTermLength
+            ? normalized[..MaxSearchTermLength]
+            : normalized;
     }
 }

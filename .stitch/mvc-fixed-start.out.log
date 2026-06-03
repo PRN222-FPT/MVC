@@ -1,0 +1,11 @@
+Using launch settings from MVC\Properties\launchSettings.json...
+[16:11:54 INF] Starting MVC host
+[16:11:54 WRN] Gemini:ApiKey is not configured. Document processing will fail fast before Qdrant upsert.
+[16:11:54 WRN] Gemini:OpenRouter:ApiKey is not configured. Chat will use a development fallback response.
+[16:11:58 INF] Document processing worker started
+[16:11:58 INF] Now listening on: http://localhost:5296
+[16:11:58 INF] Application started. Press Ctrl+C to shut down.
+[16:11:58 INF] Hosting environment: Development
+[16:11:58 INF] Content root path: C:\Users\kietta\Documents\SU26\PRN222\MVC\MVC
+[16:12:04 WRN] Failed to determine the https port for redirect.
+[16:12:05 INF] HTTP GET /Account/Login responded 200 in 367.8005 ms

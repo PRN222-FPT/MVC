@@ -32,7 +32,6 @@ public class DocumentRepository : IDocumentRepository
         ArgumentNullException.ThrowIfNull(document);
 
         await _context.Documents.AddAsync(document);
-        await _context.SaveChangesAsync();
 
         return document;
     }
@@ -51,7 +50,6 @@ public class DocumentRepository : IDocumentRepository
         }
 
         document.Status = status.Trim();
-        await _context.SaveChangesAsync();
 
         return true;
     }
@@ -65,7 +63,6 @@ public class DocumentRepository : IDocumentRepository
         }
 
         _context.Documents.Remove(document);
-        await _context.SaveChangesAsync();
 
         return true;
     }

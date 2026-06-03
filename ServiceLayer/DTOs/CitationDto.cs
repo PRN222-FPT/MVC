@@ -14,6 +14,7 @@ public sealed class CitationDto
     public int ChunkIndex { get; set; }
     public float Score { get; set; }
     public string ChunkPreview { get; set; } = string.Empty;  // max 150 chars, [Trang N] header stripped
+    public string ChunkContent { get; set; } = string.Empty;
 }
 
 /// <summary>

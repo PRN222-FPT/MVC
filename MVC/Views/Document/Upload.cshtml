@@ -17,6 +17,13 @@
 <form asp-action="Upload" method="post" enctype="multipart/form-data">
     @Html.AntiForgeryToken()
 
+    @if (!Model.SubjectOptions.Any())
+    {
+        <div class="alert alert-warning">
+            You are not assigned as Head of Department for any subject, so document upload is unavailable.
+        </div>
+    }
+
     <div class="row g-4">
         <div class="col-xl-8">
             <div class="card border-light shadow-sm rounded-4">
@@ -44,6 +51,15 @@
                             </button>
                         </div>
                     </div>
+                    <div id="uploadProgressPanel" class="d-none mt-3 rounded-3 border bg-white p-3" aria-live="polite">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div id="uploadProgressStatus" class="small fw-semibold text-secondary">Preparing upload</div>
+                            <div id="uploadProgressPercent" class="small fw-bold text-primary">0%</div>
+                        </div>
+                        <div class="progress" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="height: 10px;">
+                            <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%;"></div>
+                        </div>
+                    </div>
                     <span asp-validation-for="Form.File" class="text-danger small d-block mt-2"></span>
                 </div>
             </div>
@@ -63,14 +79,22 @@
                         <span asp-validation-for="Form.Title" class="text-danger small"></span>
                     </div>
 
+                    <div class="mb-3">
+                        <label asp-for="Form.SubjectId" class="form-label small fw-bold text-secondary">Subject</label>
+                        <select asp-for="Form.SubjectId" asp-items="Model.SubjectOptions" class="form-select">
+                            <option value="">Select subject</option>
+                        </select>
+                        <span asp-validation-for="Form.SubjectId" class="text-danger small"></span>
+                    </div>
+
                     <div class="mb-4">
                         <label asp-for="Form.ChapterId" class="form-label small fw-bold text-secondary">Chapter Id</label>
                         <input asp-for="Form.ChapterId" class="form-control" placeholder="Optional" />
                         <span asp-validation-for="Form.ChapterId" class="text-danger small"></span>
-                        <div class="form-text">Leave blank to use the default Uploads chapter.</div>
+                        <div class="form-text">Leave blank to use the selected subject's Uploads chapter.</div>
                     </div>
 
-                    <button type="submit" id="uploadSubmitButton" class="btn btn-primary w-100 py-2 fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                    <button type="submit" id="uploadSubmitButton" class="btn btn-primary w-100 py-2 fw-bold d-inline-flex align-items-center justify-content-center gap-2" disabled="@(!Model.SubjectOptions.Any())">
                         <span class="material-icons" style="font-size: 20px;">upload_file</span>
                         Upload and Process
                     </button>
@@ -90,6 +114,27 @@
             const fileSize = document.getElementById('selectedFileSize');
             const clearButton = document.getElementById('clearSelectedFile');
             const submitButton = document.getElementById('uploadSubmitButton');
+            const progressPanel = document.getElementById('uploadProgressPanel');
+            const progressStatus = document.getElementById('uploadProgressStatus');
+            const progressPercent = document.getElementById('uploadProgressPercent');
+            const progressBar = document.getElementById('uploadProgressBar');
+            const progressRoot = progressBar?.closest('.progress');
+
+            const setProgress = (percent, status) => {
+                const normalizedPercent = Math.max(0, Math.min(100, Math.round(percent)));
+                progressPanel.classList.remove('d-none');
+                progressStatus.textContent = status;
+                progressPercent.textContent = `${normalizedPercent}%`;
+                progressBar.style.width = `${normalizedPercent}%`;
+                progressRoot?.setAttribute('aria-valuenow', normalizedPercent.toString());
+            };
+
+            const setSubmitBusy = isBusy => {
+                submitButton.disabled = isBusy;
+                submitButton.innerHTML = isBusy
+                    ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Uploading'
+                    : '<span class="material-icons" style="font-size: 20px;">upload_file</span> Upload and Process';
+            };
 
             const formatBytes = bytes => {
                 if (!bytes) return '0 KB';
@@ -105,6 +150,8 @@
                     panel.classList.add('d-none');
                     fileName.textContent = '';
                     fileSize.textContent = '';
+                    setProgress(0, 'Preparing upload');
+                    progressPanel.classList.add('d-none');
                     return;
                 }
 
@@ -119,13 +166,67 @@
                 updateSelectedFile();
             });
 
-            fileInput.form?.addEventListener('submit', () => {
+            fileInput.form?.addEventListener('submit', event => {
                 if (!fileInput.files || fileInput.files.length === 0) {
                     return;
                 }
 
-                submitButton.disabled = true;
-                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Processing';
+                event.preventDefault();
+
+                const form = fileInput.form;
+                const request = new XMLHttpRequest();
+                const formData = new FormData(form);
+
+                setSubmitBusy(true);
+                setProgress(0, 'Starting upload');
+
+                request.upload.addEventListener('progress', progressEvent => {
+                    if (!progressEvent.lengthComputable) {
+                        setProgress(35, 'Uploading');
+                        return;
+                    }
+
+                    const percent = (progressEvent.loaded / progressEvent.total) * 100;
+                    setProgress(percent, `Uploading ${formatBytes(progressEvent.loaded)} of ${formatBytes(progressEvent.total)}`);
+                });
+
+                request.addEventListener('load', () => {
+                    if (request.status >= 200 && request.status < 400) {
+                        const responseUrl = request.responseURL || form.action;
+                        const responsePath = new URL(responseUrl, window.location.href).pathname;
+                        const uploadPath = new URL(form.action, window.location.href).pathname;
+                        if (responsePath === uploadPath) {
+                            document.open();
+                            document.write(request.responseText);
+                            document.close();
+                            return;
+                        }
+
+                        setProgress(100, 'Upload complete');
+                        window.location.assign(responseUrl);
+                        return;
+                    }
+
+                    setSubmitBusy(false);
+                    setProgress(100, 'Upload failed');
+                    document.open();
+                    document.write(request.responseText);
+                    document.close();
+                });
+
+                request.addEventListener('error', () => {
+                    setSubmitBusy(false);
+                    setProgress(100, 'Network error');
+                });
+
+                request.addEventListener('abort', () => {
+                    setSubmitBusy(false);
+                    setProgress(0, 'Upload cancelled');
+                });
+
+                request.open(form.method || 'POST', form.action);
+                request.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                request.send(formData);
             });
         })();
     </script>

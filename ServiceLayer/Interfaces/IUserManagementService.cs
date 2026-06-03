@@ -6,6 +6,8 @@ public interface IUserManagementService
 {
     Task<IReadOnlyList<AdminUserListItemDto>> GetUsersAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<SubjectListItemDto>> GetAssignableSubjectsAsync(CancellationToken cancellationToken = default);
+
     Task<CreateManagedUserResultDto> CreateUserAsync(
         CreateManagedUserDto request,
         CancellationToken cancellationToken = default);

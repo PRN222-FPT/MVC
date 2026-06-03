@@ -40,7 +40,9 @@ public sealed class AdminUsersController : Controller
                 viewModel.Email,
                 viewModel.Password,
                 viewModel.Role,
-                viewModel.Department),
+                viewModel.Department,
+                viewModel.SubjectId,
+                viewModel.IsHeadOfDepartment),
             cancellationToken);
 
         if (!result.Succeeded)
@@ -83,11 +85,15 @@ public sealed class AdminUsersController : Controller
         CancellationToken cancellationToken)
     {
         IReadOnlyList<AdminUserListItemDto> users = await _userManagementService.GetUsersAsync(cancellationToken);
+        IReadOnlyList<SubjectListItemDto> subjects = await _userManagementService.GetAssignableSubjectsAsync(cancellationToken);
 
         return new AdminUsersIndexViewModel
         {
             CreateUser = createUser,
             CurrentAdminUserId = TryGetCurrentUserId(),
+            SubjectOptions = subjects.Select(subject => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem(
+                $"{subject.SubjectCode} - {subject.SubjectName}",
+                subject.SubjectId.ToString())),
             Users = users.Select(u => new AdminUserListItemViewModel
             {
                 UserId = u.UserId,
@@ -95,7 +101,10 @@ public sealed class AdminUsersController : Controller
                 Email = u.Email,
                 Role = u.Role,
                 IsBlocked = u.IsBlocked,
-                CreatedAt = u.CreatedAt
+                CreatedAt = u.CreatedAt,
+                AssignedSubjectCode = u.AssignedSubjectCode,
+                AssignedSubjectName = u.AssignedSubjectName,
+                IsHeadOfDepartment = u.IsHeadOfDepartment
             }).ToList()
         };
     }

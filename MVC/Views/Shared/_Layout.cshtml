@@ -74,35 +74,8 @@
             z-index: 1040;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-end;
             padding: 0 2rem;
-        }
-
-        .search-container {
-            position: relative;
-            width: 384px;
-        }
-
-        .search-container .material-icons {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #94a3b8;
-            font-size: 20px;
-        }
-
-        .search-input {
-            padding-left: 40px;
-            background-color: #f1f5f9;
-            border: none;
-            border-radius: 99px;
-            font-size: 0.875rem;
-        }
-
-        .search-input:focus {
-            background-color: #f1f5f9;
-            box-shadow: 0 0 0 2px var(--primary-blue);
         }
 
         .btn-new-analysis {
@@ -163,6 +136,9 @@
             }
             @if (User.IsInRole(UserRoles.Admin))
             {
+                <a asp-controller="Subjects" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Subjects" ? "active" : "")">
+                    <span class="material-icons">menu_book</span> Subjects
+                </a>
                 <a asp-controller="AdminUsers" asp-action="Index" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "AdminUsers" ? "active" : "")">
                     <span class="material-icons">admin_panel_settings</span> Users
                 </a>
@@ -187,10 +163,6 @@
 
     <div class="main-wrapper">
         <header class="top-navbar">
-            <div class="search-container">
-                <span class="material-icons">search</span>
-                <input type="text" placeholder="Search documents..." class="form-control search-input" />
-            </div>
             <div class="d-flex align-items-center gap-4">
                 <button class="btn btn-link p-0 text-secondary border-0"><span class="material-icons">notifications</span></button>
                 <button class="btn btn-link p-0 text-secondary border-0"><span class="material-icons">history</span></button>

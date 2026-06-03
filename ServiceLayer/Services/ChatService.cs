@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DataAccessLayer.Models;
-using DataAccessLayer.Repositories;
+using DataAccessLayer.UnitOfWork;
 using Microsoft.Extensions.Logging;
 using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
@@ -14,21 +14,18 @@ namespace ServiceLayer.Services;
 
 public sealed class ChatService : IChatService
 {
-    private readonly IConversationRepository _conversationRepository;
-    private readonly IDocumentRepository _documentRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IRetrievalService _retrievalService;
     private readonly IGeminiService _geminiService;
     private readonly ILogger<ChatService> _logger;
 
     public ChatService(
-        IConversationRepository conversationRepository,
-        IDocumentRepository documentRepository,
+        IUnitOfWork unitOfWork,
         IRetrievalService retrievalService,
         IGeminiService geminiService,
         ILogger<ChatService> logger)
     {
-        _conversationRepository = conversationRepository ?? throw new ArgumentNullException(nameof(conversationRepository));
-        _documentRepository = documentRepository ?? throw new ArgumentNullException(nameof(documentRepository));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _retrievalService = retrievalService ?? throw new ArgumentNullException(nameof(retrievalService));
         _geminiService = geminiService ?? throw new ArgumentNullException(nameof(geminiService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -47,10 +44,17 @@ public sealed class ChatService : IChatService
 
         // 1. Resolve or create Session
         Guid sessionId = request.SessionId ?? Guid.NewGuid();
-        var session = sessionId == Guid.Empty ? null : await _conversationRepository.GetSessionByIdAsync(sessionId);
+        var session = sessionId == Guid.Empty
+            ? null
+            : await _unitOfWork.Conversations.GetSessionByIdForUserAsync(sessionId, request.UserId);
         
         if (session is null)
         {
+            if (request.SessionId.HasValue && request.SessionId.Value != Guid.Empty)
+            {
+                throw new UnauthorizedAccessException("The requested chat session does not belong to the current user.");
+            }
+
             if (sessionId == Guid.Empty)
             {
                 sessionId = Guid.NewGuid();
@@ -63,7 +67,7 @@ public sealed class ChatService : IChatService
                 UserId = request.UserId,
                 StartedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
             };
-            await _conversationRepository.CreateSessionAsync(session);
+            await _unitOfWork.Conversations.CreateSessionAsync(session);
         }
 
         // 2. Save User Message to DB
@@ -75,7 +79,8 @@ public sealed class ChatService : IChatService
             MessageContent = request.Message,
             CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
         };
-        await _conversationRepository.AddMessageAsync(userMessage);
+        await _unitOfWork.Conversations.AddMessageAsync(userMessage);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 3. Retrieve context chunks (RAG Retrieve)
         var contextChunks = await _retrievalService.RetrieveContextAsync(request.Message, cancellationToken);
@@ -100,7 +105,8 @@ public sealed class ChatService : IChatService
             MessageContent = answer,
             CreatedAt = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified)
         };
-        await _conversationRepository.AddMessageAsync(aiMessage);
+        await _unitOfWork.Conversations.AddMessageAsync(aiMessage);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 7. Resolve Document Titles for Citations
         var docIds = contextChunks.Select(c => c.DocumentId).Distinct().ToList();
@@ -109,7 +115,7 @@ public sealed class ChatService : IChatService
         {
             try
             {
-                var docs = await _documentRepository.GetByIdsAsync(docIds);
+                var docs = await _unitOfWork.Documents.GetByIdsAsync(docIds);
                 
                 docTitles = docs.ToDictionary(d => d.DocumentId, d => d.Title ?? "Untitled");
             }
@@ -126,7 +132,9 @@ public sealed class ChatService : IChatService
             DocumentTitle = docTitles.TryGetValue(c.DocumentId, out var title) ? title : "Untitled Document",
             PageNo = c.PageNo,
             ChunkIndex = c.ChunkIndex,
-            Score = c.Score
+            Score = c.Score,
+            ChunkPreview = BuildCitationPreview(c.ChunkText),
+            ChunkContent = c.ChunkText
         }).ToList();
 
         stopwatch.Stop();
@@ -140,5 +148,95 @@ public sealed class ChatService : IChatService
             Citations = citations,
             LatencyMs = elapsedMs
         };
+    }
+
+    public async Task<IReadOnlyList<ChatSessionHistoryDto>> GetHistoryAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException("User id is required.", nameof(userId));
+        }
+
+        IReadOnlyList<Session> sessions = await _unitOfWork.Conversations.GetSessionsByUserIdAsync(userId);
+
+        return sessions
+            .Select(session =>
+            {
+                IReadOnlyList<Message> messages = session.Messages
+                    .OrderBy(message => message.CreatedAt)
+                    .ToList();
+
+                Message? firstUserMessage = messages.FirstOrDefault(message =>
+                    string.Equals(message.SenderRole, "user", StringComparison.OrdinalIgnoreCase));
+                DateTime? lastMessageAt = messages
+                    .OrderByDescending(message => message.CreatedAt)
+                    .FirstOrDefault()
+                    ?.CreatedAt;
+
+                return new ChatSessionHistoryDto(
+                    session.SessionId,
+                    session.StartedAt,
+                    lastMessageAt,
+                    BuildSessionTitle(firstUserMessage?.MessageContent),
+                    messages.Count);
+            })
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<ChatMessageHistoryDto>> GetSessionMessagesAsync(
+        Guid userId,
+        Guid sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException("User id is required.", nameof(userId));
+        }
+
+        if (sessionId == Guid.Empty)
+        {
+            throw new ArgumentException("Session id is required.", nameof(sessionId));
+        }
+
+        Session? session = await _unitOfWork.Conversations.GetSessionByIdForUserAsync(sessionId, userId);
+        if (session is null)
+        {
+            throw new UnauthorizedAccessException("The requested chat session does not belong to the current user.");
+        }
+
+        IReadOnlyList<Message> messages = await _unitOfWork.Conversations.GetMessagesBySessionIdForUserAsync(sessionId, userId);
+
+        return messages
+            .Select(message => new ChatMessageHistoryDto(
+                message.MessageId,
+                message.SessionId,
+                message.SenderRole,
+                message.MessageContent,
+                message.CreatedAt))
+            .ToList();
+    }
+
+    private static string BuildSessionTitle(string? firstUserMessage)
+    {
+        if (string.IsNullOrWhiteSpace(firstUserMessage))
+        {
+            return "New chat";
+        }
+
+        string title = firstUserMessage.Trim();
+        return title.Length > 60 ? $"{title[..60]}..." : title;
+    }
+
+    private static string BuildCitationPreview(string chunkText)
+    {
+        if (string.IsNullOrWhiteSpace(chunkText))
+        {
+            return string.Empty;
+        }
+
+        string normalized = chunkText.Trim();
+        return normalized.Length <= 150 ? normalized : $"{normalized[..150]}...";
     }
 }

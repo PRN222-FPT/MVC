@@ -1,4 +1,5 @@
 using DataAccessLayer.Models;
+using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
@@ -8,28 +9,86 @@ namespace ServiceLayer.Services;
 public sealed class UserManagementService : IUserManagementService
 {
     private readonly Prn222Context _context;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHashService _passwordHashService;
 
-    public UserManagementService(Prn222Context context, IPasswordHashService passwordHashService)
+    public UserManagementService(
+        Prn222Context context,
+        IUnitOfWork unitOfWork,
+        IPasswordHashService passwordHashService)
     {
         _context = context;
+        _unitOfWork = unitOfWork;
         _passwordHashService = passwordHashService;
     }
 
     public async Task<IReadOnlyList<AdminUserListItemDto>> GetUsersAsync(
         CancellationToken cancellationToken = default)
     {
-        return await _context.Users
+        var users = await _context.Users
             .AsNoTracking()
-            .OrderByDescending(u => u.CreatedAt)
-            .ThenBy(u => u.Email)
-            .Select(u => new AdminUserListItemDto(
-                u.UserId,
-                u.FullName,
-                u.Email,
-                u.Role ?? UserRoles.Student,
-                u.IsBlocked,
-                u.CreatedAt))
+            .OrderByDescending(user => user.CreatedAt)
+            .ThenBy(user => user.Email)
+            .ToListAsync(cancellationToken);
+
+        string[] teacherEmails = users
+            .Where(user => string.Equals(user.Role, UserRoles.Teacher, StringComparison.OrdinalIgnoreCase))
+            .Select(user => user.Email.ToLowerInvariant())
+            .ToArray();
+
+        var teacherAssignments = await _context.Teachers
+            .AsNoTracking()
+            .Where(teacher => teacher.Email != null && teacherEmails.Contains(teacher.Email.ToLower()))
+            .SelectMany(
+                teacher => teacher.TeacherSubjects.Select(assignment => new
+                {
+                    Email = teacher.Email!,
+                    assignment.Subject.SubjectCode,
+                    assignment.Subject.SubjectName,
+                    assignment.IsHeadOfDepartment
+                }))
+            .ToListAsync(cancellationToken);
+
+        var assignmentByEmail = teacherAssignments
+            .GroupBy(assignment => assignment.Email.ToLowerInvariant())
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(assignment => assignment.IsHeadOfDepartment)
+                    .ThenBy(assignment => assignment.SubjectCode)
+                    .First());
+
+        return users
+            .Select(user =>
+            {
+                assignmentByEmail.TryGetValue(user.Email.ToLowerInvariant(), out var assignment);
+                return new AdminUserListItemDto(
+                    user.UserId,
+                    user.FullName,
+                    user.Email,
+                    user.Role ?? UserRoles.Student,
+                    user.IsBlocked,
+                    user.CreatedAt,
+                    assignment?.SubjectCode,
+                    assignment?.SubjectName,
+                    assignment?.IsHeadOfDepartment ?? false);
+            })
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<SubjectListItemDto>> GetAssignableSubjectsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Subjects
+            .AsNoTracking()
+            .OrderBy(subject => subject.SubjectCode)
+            .ThenBy(subject => subject.SubjectName)
+            .Select(subject => new SubjectListItemDto(
+                subject.SubjectId,
+                subject.SubjectCode,
+                subject.SubjectName,
+                subject.Description,
+                subject.CreatedAt))
             .ToListAsync(cancellationToken);
     }
 
@@ -53,6 +112,22 @@ public sealed class UserManagementService : IUserManagementService
             return new CreateManagedUserResultDto(false, "An account with this email already exists.");
         }
 
+        Subject? assignedSubject = null;
+        if (normalizedRole == UserRoles.Teacher)
+        {
+            if (!request.SubjectId.HasValue || request.SubjectId.Value == Guid.Empty)
+            {
+                return new CreateManagedUserResultDto(false, "Teacher accounts must be assigned to a subject.");
+            }
+
+            assignedSubject = await _context.Subjects
+                .FirstOrDefaultAsync(subject => subject.SubjectId == request.SubjectId.Value, cancellationToken);
+            if (assignedSubject is null)
+            {
+                return new CreateManagedUserResultDto(false, "Selected subject was not found.");
+            }
+        }
+
         var user = new User
         {
             FullName = request.FullName.Trim(),
@@ -65,21 +140,39 @@ public sealed class UserManagementService : IUserManagementService
 
         if (normalizedRole == UserRoles.Teacher)
         {
-            bool teacherExists = await _context.Teachers
-                .AnyAsync(t => t.Email != null && t.Email.ToLower() == normalizedEmail, cancellationToken);
+            Teacher? teacher = await _context.Teachers
+                .FirstOrDefaultAsync(t => t.Email != null && t.Email.ToLower() == normalizedEmail, cancellationToken);
 
-            if (!teacherExists)
+            if (teacher is null)
             {
-                _context.Teachers.Add(new Teacher
+                teacher = new Teacher
                 {
+                    TeacherId = Guid.NewGuid(),
                     FullName = user.FullName,
                     Email = normalizedEmail,
                     Department = string.IsNullOrWhiteSpace(request.Department) ? null : request.Department.Trim()
+                };
+                _context.Teachers.Add(teacher);
+            }
+
+            bool assignmentExists = await _context.TeacherSubjects
+                .AnyAsync(
+                    assignment => assignment.TeacherId == teacher.TeacherId
+                        && assignment.SubjectId == assignedSubject!.SubjectId,
+                    cancellationToken);
+            if (!assignmentExists)
+            {
+                _context.TeacherSubjects.Add(new TeacherSubject
+                {
+                    TeacherSubjectId = Guid.NewGuid(),
+                    TeacherId = teacher.TeacherId,
+                    SubjectId = assignedSubject!.SubjectId,
+                    IsHeadOfDepartment = request.IsHeadOfDepartment
                 });
             }
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
         return new CreateManagedUserResultDto(true, null);
     }
 
@@ -112,7 +205,7 @@ public sealed class UserManagementService : IUserManagementService
         }
 
         user.IsBlocked = true;
-        await _context.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new BlockManagedUserResultDto(true, null);
     }
@@ -134,7 +227,7 @@ public sealed class UserManagementService : IUserManagementService
                 Role = UserRoles.Admin
             });
 
-            await _context.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             return;
         }
 
@@ -154,7 +247,7 @@ public sealed class UserManagementService : IUserManagementService
 
         if (changed)
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
     }
 }

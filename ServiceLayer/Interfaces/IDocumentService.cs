@@ -8,6 +8,15 @@ namespace ServiceLayer.Interfaces;
 public interface IDocumentService
 {
     Task<IReadOnlyList<DocumentListItemDto>> GetDocumentsAsync(
+        string? searchTerm = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TeacherUploadSubjectDto>> GetUploadableSubjectsAsync(
+        Guid teacherUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<DocumentFileDto> OpenDocumentFileAsync(
+        Guid documentId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
