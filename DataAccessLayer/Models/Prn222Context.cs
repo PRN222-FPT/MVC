@@ -43,13 +43,8 @@ public partial class Prn222Context : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // When the context is registered through DI (AddDbContext), the connection
-        // string comes from configuration and optionsBuilder is already configured.
-        // Only fall back to the local-dev string when nothing else has configured it.
-        if (!optionsBuilder.IsConfigured)
-        {
-            optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=prn222;Username=postgres;Password=<YOUR_LOCAL_PASSWORD>");
-        }
+        // Database provider configuration is intentionally centralized in DI.
+        // This prevents Prn222Context from silently using a hardcoded fallback.
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -429,6 +424,9 @@ public partial class Prn222Context : DbContext
             entity.Property(e => e.IsBlocked)
                 .HasDefaultValue(false)
                 .HasColumnName("is_blocked");
+            entity.Property(e => e.StudentCode)
+                .HasMaxLength(50)
+                .HasColumnName("student_code");
             entity.Property(e => e.PasswordHash).HasColumnName("password_hash");
             entity.Property(e => e.Role)
                 .HasMaxLength(50)

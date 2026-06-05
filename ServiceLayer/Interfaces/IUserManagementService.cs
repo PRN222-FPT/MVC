@@ -12,9 +12,18 @@ public interface IUserManagementService
         CreateManagedUserDto request,
         CancellationToken cancellationToken = default);
 
+    Task<StudentAccountImportResultDto> ImportStudentAccountsAsync(
+        string fileName,
+        Stream fileContent,
+        CancellationToken cancellationToken = default);
+
     Task<BlockManagedUserResultDto> BlockUserAsync(
         Guid userId,
         Guid currentAdminUserId,
+        CancellationToken cancellationToken = default);
+
+    Task<ResetAccountPasswordResultDto> ResetAccountPasswordAsync(
+        string email,
         CancellationToken cancellationToken = default);
 
     Task EnsureAdminUserAsync(AdminUserSeedDto seed, CancellationToken cancellationToken = default);

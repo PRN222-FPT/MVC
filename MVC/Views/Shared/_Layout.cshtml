@@ -152,6 +152,9 @@
                     <span class="material-icons">add</span> New Analysis
                 </button>
             }
+            <a asp-controller="Account" asp-action="ChangePassword" class="nav-link @(ViewContext.RouteData.Values["controller"]?.ToString() == "Account" && ViewContext.RouteData.Values["action"]?.ToString() == "ChangePassword" ? "active" : "")">
+                <span class="material-icons">lock_reset</span> Change Password
+            </a>
             <form asp-controller="Account" asp-action="Logout" method="post">
                 @Html.AntiForgeryToken()
                 <button type="submit" class="nav-link text-secondary border-0 bg-transparent w-100 text-start">

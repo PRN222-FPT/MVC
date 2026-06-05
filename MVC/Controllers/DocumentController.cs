@@ -13,7 +13,7 @@ namespace MVC.Controllers;
 /// <summary>
 /// Document library and upload workflow for the RAG ingestion pipeline.
 /// </summary>
-[Authorize(Roles = UserRoles.Teacher)]
+[Authorize(Roles = $"{UserRoles.Student},{UserRoles.Teacher}")]
 [Route("Documents")]
 public class DocumentController : Controller
 {
@@ -34,12 +34,14 @@ public class DocumentController : Controller
     }
 
     [HttpGet]
+    [Authorize(Roles = UserRoles.Teacher)]
     public IActionResult Index()
     {
         return RedirectToAction(nameof(Library));
     }
 
     [HttpGet("Library")]
+    [Authorize(Roles = UserRoles.Teacher)]
     public async Task<IActionResult> Library([FromQuery] string? searchTerm, CancellationToken cancellationToken)
     {
         string? normalizedSearchTerm = NormalizeSearchTerm(searchTerm);
@@ -57,6 +59,7 @@ public class DocumentController : Controller
     }
 
     [HttpGet("Statuses")]
+    [Authorize(Roles = UserRoles.Teacher)]
     [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public async Task<IActionResult> Statuses(CancellationToken cancellationToken)
     {
@@ -77,6 +80,7 @@ public class DocumentController : Controller
     }
 
     [HttpGet("Upload")]
+    [Authorize(Roles = UserRoles.Teacher)]
     public async Task<IActionResult> Upload(CancellationToken cancellationToken)
     {
         return View(await BuildUploadPageViewModelAsync(new UploadDocumentForm(), cancellationToken));
@@ -84,6 +88,7 @@ public class DocumentController : Controller
 
     // Backward-compatible route for older sidebar links.
     [HttpGet("UploadPage")]
+    [Authorize(Roles = UserRoles.Teacher)]
     public IActionResult UploadPage()
     {
         return RedirectToAction(nameof(Upload));
@@ -97,6 +102,7 @@ public class DocumentController : Controller
     /// the ingestion pipeline before returning to the library page.
     /// </remarks>
     [HttpPost("Upload")]
+    [Authorize(Roles = UserRoles.Teacher)]
     [ValidateAntiForgeryToken]
     [RequestSizeLimit(25L * 1024 * 1024)]
     public async Task<IActionResult> Upload(

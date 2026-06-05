@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MVC.Controllers;
@@ -13,6 +14,48 @@ namespace Test;
 
 public sealed class DocumentControllerTests
 {
+    [Fact]
+    public void Controller_AllowsStudentsAndTeachersForDocumentViewingRoutes()
+    {
+        AuthorizeAttribute attribute = Assert.Single(
+            typeof(DocumentController).GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+                .Cast<AuthorizeAttribute>());
+
+        Assert.Equal($"{UserRoles.Student},{UserRoles.Teacher}", attribute.Roles);
+    }
+
+    [Theory]
+    [InlineData(nameof(DocumentController.Library))]
+    [InlineData(nameof(DocumentController.Statuses))]
+    [InlineData(nameof(DocumentController.Upload))]
+    [InlineData(nameof(DocumentController.UploadPage))]
+    public void TeacherManagementActions_RequireTeacherRole(string actionName)
+    {
+        List<AuthorizeAttribute> attributes = typeof(DocumentController).GetMethods()
+            .Where(method => method.Name == actionName)
+            .SelectMany(method => method.GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true))
+            .Cast<AuthorizeAttribute>()
+            .ToList();
+
+        Assert.NotEmpty(attributes);
+        Assert.All(attributes, attribute => Assert.Equal(UserRoles.Teacher, attribute.Roles));
+    }
+
+    [Theory]
+    [InlineData(nameof(DocumentController.ViewDocument))]
+    [InlineData(nameof(DocumentController.Inline))]
+    [InlineData(nameof(DocumentController.Download))]
+    public void CitationDocumentActions_DoNotRequireTeacherRole(string actionName)
+    {
+        bool hasTeacherOnlyAttribute = typeof(DocumentController).GetMethods()
+            .Where(method => method.Name == actionName)
+            .SelectMany(method => method.GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true))
+            .Cast<AuthorizeAttribute>()
+            .Any(attribute => string.Equals(attribute.Roles, UserRoles.Teacher, StringComparison.Ordinal));
+
+        Assert.False(hasTeacherOnlyAttribute);
+    }
+
     [Fact]
     public async Task Library_SearchTerm_PassesTrimmedTermToDocumentService()
     {
