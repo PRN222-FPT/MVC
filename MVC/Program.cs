@@ -72,21 +72,11 @@ try
 
     // ----- DbContexts -----
     string? connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    bool hasConfiguredConnectionString = !string.IsNullOrWhiteSpace(connectionString);
-    if (!hasConfiguredConnectionString && !builder.Environment.IsDevelopment())
+    if (string.IsNullOrWhiteSpace(connectionString))
     {
         throw new InvalidOperationException(
             "ConnectionStrings:DefaultConnection is not configured. " +
-            "Set it via user-secrets or an environment variable (it is intentionally not stored in source).");
-    }
-
-    if (!hasConfiguredConnectionString)
-    {
-        Log.Warning(
-            "ConnectionStrings:DefaultConnection is not configured. " +
-            "Using local development PostgreSQL fallback; configure user-secrets or an environment variable for database-backed features.");
-
-        connectionString = "Host=localhost;Port=5432;Database=prn222_dev;Username=postgres";
+            "Set it via appsettings, user-secrets, or an environment variable.");
     }
 
     builder.Services.AddDbContext<Prn222Context>(options =>
@@ -109,6 +99,8 @@ try
         builder.Configuration.GetSection(QdrantOptions.SectionName));
     builder.Services.Configure<GeminiOptions>(
         builder.Configuration.GetSection(GeminiOptions.SectionName));
+    builder.Services.Configure<SmtpOptions>(
+        builder.Configuration.GetSection(SmtpOptions.SectionName));
     IConfigurationSection geminiSection = builder.Configuration.GetSection(GeminiOptions.SectionName);
     string chatProvider = geminiSection["ChatProvider"] ?? GeminiChatProviders.Google;
     string? geminiApiKey = geminiSection["ApiKey"];
@@ -133,6 +125,7 @@ try
         builder.Services.AddScoped<IEmbeddingService, GeminiEmbeddingService>();
     }
     builder.Services.AddScoped<IPasswordHashService, Pbkdf2PasswordHashService>();
+    builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<IUserManagementService, UserManagementService>();
     builder.Services.AddScoped<ICitationService, CitationService>();
@@ -185,18 +178,21 @@ try
 
     var app = builder.Build();
 
-    if (hasConfiguredConnectionString)
+    using (IServiceScope scope = app.Services.CreateScope())
     {
-        using IServiceScope scope = app.Services.CreateScope();
-        var userManagementService = scope.ServiceProvider.GetRequiredService<IUserManagementService>();
-        await userManagementService.EnsureAdminUserAsync(
-            new AdminUserSeedDto(
-                "admin@gmail.com",
-                "PBKDF2$100000$R0lSRU9ORV9BRE1JTl9TQUxU$Idc6k7eiE+pqDI5o//p5/vhww9o0lKnCDC6TfOGwbK8="));
-    }
-    else
-    {
-        Log.Warning("Skipping admin seed because no configured database connection string was provided.");
+        var context = scope.ServiceProvider.GetRequiredService<Prn222Context>();
+        await EnsureUserSchemaCompatibilityAsync(context);
+
+        AdminUserSeedDto? adminSeed = GetConfiguredAdminSeed(builder.Configuration);
+        if (adminSeed is not null)
+        {
+            var userManagementService = scope.ServiceProvider.GetRequiredService<IUserManagementService>();
+            await userManagementService.EnsureAdminUserAsync(adminSeed);
+        }
+        else
+        {
+            Log.Warning("Admin seed skipped because AdminSeed:Email or AdminSeed:Password is not configured.");
+        }
     }
 
     // ----- HTTP pipeline -----
@@ -237,6 +233,36 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+static async Task EnsureUserSchemaCompatibilityAsync(Prn222Context context)
+{
+    const string sql = """
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS is_blocked boolean NOT NULL DEFAULT false;
+
+        ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS student_code character varying(50);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS users_student_code_key
+            ON users (student_code)
+            WHERE student_code IS NOT NULL;
+        """;
+
+    await context.Database.ExecuteSqlRawAsync(sql);
+}
+
+static AdminUserSeedDto? GetConfiguredAdminSeed(IConfiguration configuration)
+{
+    string? email = configuration["AdminSeed:Email"];
+    string? password = configuration["AdminSeed:Password"];
+
+    if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+    {
+        return null;
+    }
+
+    return new AdminUserSeedDto(email, password);
 }
 
 // Exposed for WebApplicationFactory-based integration tests.

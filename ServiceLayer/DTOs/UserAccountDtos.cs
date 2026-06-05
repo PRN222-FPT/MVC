@@ -23,10 +23,20 @@ public sealed record LoginRequestDto(
     string Email,
     string Password);
 
+public sealed record ChangePasswordRequestDto(
+    Guid UserId,
+    string CurrentPassword,
+    string NewPassword);
+
+public sealed record ChangePasswordResultDto(
+    bool Succeeded,
+    string? ErrorMessage);
+
 public sealed record AdminUserListItemDto(
     Guid UserId,
     string FullName,
     string Email,
+    string? StudentCode,
     string Role,
     bool IsBlocked,
     DateTime? CreatedAt,
@@ -51,6 +61,34 @@ public sealed record BlockManagedUserResultDto(
     bool Succeeded,
     string? ErrorMessage);
 
+public sealed record ResetAccountPasswordResultDto(
+    bool Succeeded,
+    string? ErrorMessage);
+
 public sealed record AdminUserSeedDto(
     string Email,
-    string PasswordHash);
+    string Password);
+
+public sealed record StudentImportRowDto(
+    int RowNumber,
+    string StudentCode,
+    string FullName,
+    string Email);
+
+public sealed record StudentAccountImportRowResultDto(
+    int RowNumber,
+    string StudentCode,
+    string FullName,
+    string Email,
+    string Status,
+    string Message);
+
+public sealed record StudentAccountImportResultDto(
+    int TotalRows,
+    int CreatedCount,
+    int SkippedCount,
+    int FailedCount,
+    IReadOnlyList<StudentAccountImportRowResultDto> Rows)
+{
+    public bool Succeeded => FailedCount == 0;
+}

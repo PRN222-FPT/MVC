@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MVC.ViewModels;
 using ServiceLayer.DTOs;
@@ -91,6 +92,49 @@ public class AccountController : Controller
         return RedirectToAction(nameof(Login));
     }
 
+    [Authorize]
+    [HttpGet]
+    public IActionResult ChangePassword()
+    {
+        return View(new ChangePasswordViewModel());
+    }
+
+    [Authorize]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ChangePassword(
+        ChangePasswordViewModel viewModel,
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid)
+        {
+            return View(viewModel);
+        }
+
+        Guid? currentUserId = TryGetCurrentUserId();
+        if (currentUserId is null)
+        {
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return RedirectToAction(nameof(Login));
+        }
+
+        ChangePasswordResultDto result = await _accountService.ChangePasswordAsync(
+            new ChangePasswordRequestDto(
+                currentUserId.Value,
+                viewModel.CurrentPassword,
+                viewModel.NewPassword),
+            cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Password could not be changed.");
+            return View(viewModel);
+        }
+
+        TempData["Success"] = "Password changed successfully.";
+        return RedirectToAction(nameof(ChangePassword));
+    }
+
     [HttpGet]
     public IActionResult AccessDenied()
     {
@@ -115,5 +159,11 @@ public class AccountController : Controller
         }
 
         return RedirectToAction("Index", "Chat");
+    }
+
+    private Guid? TryGetCurrentUserId()
+    {
+        string? userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(userId, out Guid parsed) ? parsed : null;
     }
 }

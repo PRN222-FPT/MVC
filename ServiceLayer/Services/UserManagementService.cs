@@ -3,23 +3,30 @@ using DataAccessLayer.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
+using System.Net.Mail;
+using System.Security.Cryptography;
 
 namespace ServiceLayer.Services;
 
 public sealed class UserManagementService : IUserManagementService
 {
+    private const int GeneratedPasswordLength = 14;
+
     private readonly Prn222Context _context;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHashService _passwordHashService;
+    private readonly IEmailSender _emailSender;
 
     public UserManagementService(
         Prn222Context context,
         IUnitOfWork unitOfWork,
-        IPasswordHashService passwordHashService)
+        IPasswordHashService passwordHashService,
+        IEmailSender emailSender)
     {
         _context = context;
         _unitOfWork = unitOfWork;
         _passwordHashService = passwordHashService;
+        _emailSender = emailSender;
     }
 
     public async Task<IReadOnlyList<AdminUserListItemDto>> GetUsersAsync(
@@ -66,6 +73,7 @@ public sealed class UserManagementService : IUserManagementService
                     user.UserId,
                     user.FullName,
                     user.Email,
+                    user.StudentCode,
                     user.Role ?? UserRoles.Student,
                     user.IsBlocked,
                     user.CreatedAt,
@@ -176,6 +184,108 @@ public sealed class UserManagementService : IUserManagementService
         return new CreateManagedUserResultDto(true, null);
     }
 
+    public async Task<StudentAccountImportResultDto> ImportStudentAccountsAsync(
+        string fileName,
+        Stream fileContent,
+        CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<StudentImportRowDto> rows = await StudentRosterParser.ParseAsync(
+            fileName,
+            fileContent,
+            cancellationToken);
+
+        var results = new List<StudentAccountImportRowResultDto>();
+        var seenEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenStudentCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (StudentImportRowDto row in rows)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string studentCode = row.StudentCode.Trim();
+            string fullName = row.FullName.Trim();
+            string normalizedEmail = row.Email.Trim().ToLowerInvariant();
+
+            string? validationError = ValidateStudentImportRow(studentCode, fullName, normalizedEmail);
+            if (validationError is not null)
+            {
+                results.Add(ToResult(row, "Failed", validationError));
+                continue;
+            }
+
+            if (!seenEmails.Add(normalizedEmail))
+            {
+                results.Add(ToResult(row, "Skipped", "Duplicate email in uploaded file."));
+                continue;
+            }
+
+            if (!seenStudentCodes.Add(studentCode))
+            {
+                results.Add(ToResult(row, "Skipped", "Duplicate MSSV in uploaded file."));
+                continue;
+            }
+
+            bool existingAccount = await _context.Users
+                .AnyAsync(user => user.Email.ToLower() == normalizedEmail, cancellationToken);
+            if (existingAccount)
+            {
+                results.Add(ToResult(row, "Skipped", "An account with this email already exists."));
+                continue;
+            }
+
+            bool existingStudentCode = await _context.Users
+                .AnyAsync(
+                    user => user.StudentCode != null && user.StudentCode.ToLower() == studentCode.ToLower(),
+                    cancellationToken);
+            if (existingStudentCode)
+            {
+                results.Add(ToResult(row, "Skipped", "An account with this MSSV already exists."));
+                continue;
+            }
+
+            string temporaryPassword = GenerateTemporaryPassword();
+            var user = new User
+            {
+                FullName = fullName,
+                Email = normalizedEmail,
+                StudentCode = studentCode,
+                PasswordHash = _passwordHashService.HashPassword(temporaryPassword),
+                Role = UserRoles.Student
+            };
+
+            _context.Users.Add(user);
+
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _emailSender.SendStudentWelcomeEmailAsync(
+                    normalizedEmail,
+                    fullName,
+                    temporaryPassword,
+                    cancellationToken);
+                results.Add(ToResult(row, "Created", "Account created and email sent."));
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or SmtpException)
+            {
+                _context.Users.Remove(user);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                results.Add(ToResult(row, "Failed", "Account was not created because the welcome email could not be sent."));
+            }
+            catch (DbUpdateException)
+            {
+                _context.Entry(user).State = EntityState.Detached;
+                results.Add(ToResult(row, "Failed", "Account could not be saved."));
+            }
+        }
+
+        return new StudentAccountImportResultDto(
+            rows.Count,
+            results.Count(result => result.Status == "Created"),
+            results.Count(result => result.Status == "Skipped"),
+            results.Count(result => result.Status == "Failed"),
+            results);
+    }
+
     public async Task<BlockManagedUserResultDto> BlockUserAsync(
         Guid userId,
         Guid currentAdminUserId,
@@ -210,6 +320,55 @@ public sealed class UserManagementService : IUserManagementService
         return new BlockManagedUserResultDto(true, null);
     }
 
+    public async Task<ResetAccountPasswordResultDto> ResetAccountPasswordAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        string normalizedEmail = email.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedEmail))
+        {
+            return new ResetAccountPasswordResultDto(false, "Account email is required.");
+        }
+
+        User? user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail, cancellationToken);
+
+        if (user is null)
+        {
+            return new ResetAccountPasswordResultDto(false, "Account was not found.");
+        }
+
+        if (!IsResettableRole(user.Role))
+        {
+            return new ResetAccountPasswordResultDto(false, "Only student and teacher accounts can be reset here.");
+        }
+
+        if (user.IsBlocked)
+        {
+            return new ResetAccountPasswordResultDto(false, "Blocked accounts cannot be reset.");
+        }
+
+        string temporaryPassword = GenerateTemporaryPassword();
+
+        try
+        {
+            await _emailSender.SendPasswordResetEmailAsync(
+                user.Email,
+                user.FullName,
+                temporaryPassword,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or SmtpException)
+        {
+            return new ResetAccountPasswordResultDto(false, "Password was not reset because the reset email could not be sent.");
+        }
+
+        user.PasswordHash = _passwordHashService.HashPassword(temporaryPassword);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new ResetAccountPasswordResultDto(true, null);
+    }
+
     public async Task EnsureAdminUserAsync(AdminUserSeedDto seed, CancellationToken cancellationToken = default)
     {
         string normalizedEmail = seed.Email.Trim().ToLowerInvariant();
@@ -223,7 +382,7 @@ public sealed class UserManagementService : IUserManagementService
             {
                 FullName = "System Administrator",
                 Email = normalizedEmail,
-                PasswordHash = seed.PasswordHash,
+                PasswordHash = _passwordHashService.HashPassword(seed.Password),
                 Role = UserRoles.Admin
             });
 
@@ -239,9 +398,9 @@ public sealed class UserManagementService : IUserManagementService
             changed = true;
         }
 
-        if (!string.Equals(user.PasswordHash, seed.PasswordHash, StringComparison.Ordinal))
+        if (!_passwordHashService.VerifyPassword(seed.Password, user.PasswordHash))
         {
-            user.PasswordHash = seed.PasswordHash;
+            user.PasswordHash = _passwordHashService.HashPassword(seed.Password);
             changed = true;
         }
 
@@ -249,5 +408,89 @@ public sealed class UserManagementService : IUserManagementService
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private static string? ValidateStudentImportRow(string studentCode, string fullName, string email)
+    {
+        if (string.IsNullOrWhiteSpace(studentCode))
+        {
+            return "MSSV is required.";
+        }
+
+        if (studentCode.Length > 50)
+        {
+            return "MSSV cannot exceed 50 characters.";
+        }
+
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            return "Name is required.";
+        }
+
+        if (fullName.Length > 255)
+        {
+            return "Name cannot exceed 255 characters.";
+        }
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return "Email is required.";
+        }
+
+        if (email.Length > 255)
+        {
+            return "Email cannot exceed 255 characters.";
+        }
+
+        try
+        {
+            _ = new MailAddress(email);
+        }
+        catch (FormatException)
+        {
+            return "Email is invalid.";
+        }
+
+        return null;
+    }
+
+    private static StudentAccountImportRowResultDto ToResult(
+        StudentImportRowDto row,
+        string status,
+        string message) =>
+        new(row.RowNumber, row.StudentCode, row.FullName, row.Email, status, message);
+
+    private static bool IsResettableRole(string? role) =>
+        string.Equals(role, UserRoles.Student, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(role, UserRoles.Teacher, StringComparison.OrdinalIgnoreCase);
+
+    private static string GenerateTemporaryPassword()
+    {
+        const string lower = "abcdefghijkmnopqrstuvwxyz";
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string digits = "23456789";
+        const string symbols = "!@$%*-_";
+        string allCharacters = lower + upper + digits + symbols;
+
+        var characters = new List<char>
+        {
+            lower[RandomNumberGenerator.GetInt32(lower.Length)],
+            upper[RandomNumberGenerator.GetInt32(upper.Length)],
+            digits[RandomNumberGenerator.GetInt32(digits.Length)],
+            symbols[RandomNumberGenerator.GetInt32(symbols.Length)]
+        };
+
+        while (characters.Count < GeneratedPasswordLength)
+        {
+            characters.Add(allCharacters[RandomNumberGenerator.GetInt32(allCharacters.Length)]);
+        }
+
+        for (int i = characters.Count - 1; i > 0; i--)
+        {
+            int swapIndex = RandomNumberGenerator.GetInt32(i + 1);
+            (characters[i], characters[swapIndex]) = (characters[swapIndex], characters[i]);
+        }
+
+        return new string(characters.ToArray());
     }
 }

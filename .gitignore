@@ -51,3 +51,6 @@ uploads/
 
 # CodeGraph and tool analysis directories
 .codegraph/
+
+# Temporary build/output directories
+.tmp/

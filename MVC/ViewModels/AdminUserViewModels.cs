@@ -8,6 +8,12 @@ public sealed class AdminUsersIndexViewModel
 {
     public CreateUserViewModel CreateUser { get; set; } = new();
 
+    public ImportStudentsViewModel ImportStudents { get; set; } = new();
+
+    public ResetAccountPasswordViewModel ResetPassword { get; set; } = new();
+
+    public StudentImportResultViewModel? ImportResult { get; set; }
+
     public IReadOnlyList<AdminUserListItemViewModel> Users { get; set; } = [];
 
     public int StudentCount => Users.Count(u => u.Role == UserRoles.Student);
@@ -30,6 +36,8 @@ public sealed class AdminUserListItemViewModel
     public string FullName { get; set; } = string.Empty;
 
     public string Email { get; set; } = string.Empty;
+
+    public string? StudentCode { get; set; }
 
     public string Role { get; set; } = string.Empty;
 
@@ -75,4 +83,46 @@ public sealed class CreateUserViewModel
         new("Student", UserRoles.Student),
         new("Teacher", UserRoles.Teacher)
     ];
+}
+
+public sealed class ImportStudentsViewModel
+{
+    [Required(ErrorMessage = "Upload a Google Sheets export file.")]
+    public IFormFile? File { get; set; }
+}
+
+public sealed class ResetAccountPasswordViewModel
+{
+    [Required(ErrorMessage = "Account email is required.")]
+    [EmailAddress(ErrorMessage = "Enter a valid account email address.")]
+    [StringLength(255, ErrorMessage = "Email cannot exceed 255 characters.")]
+    public string Email { get; set; } = string.Empty;
+}
+
+public sealed class StudentImportResultViewModel
+{
+    public int TotalRows { get; set; }
+
+    public int CreatedCount { get; set; }
+
+    public int SkippedCount { get; set; }
+
+    public int FailedCount { get; set; }
+
+    public IReadOnlyList<StudentImportRowResultViewModel> Rows { get; set; } = [];
+}
+
+public sealed class StudentImportRowResultViewModel
+{
+    public int RowNumber { get; set; }
+
+    public string StudentCode { get; set; } = string.Empty;
+
+    public string FullName { get; set; } = string.Empty;
+
+    public string Email { get; set; } = string.Empty;
+
+    public string Status { get; set; } = string.Empty;
+
+    public string Message { get; set; } = string.Empty;
 }
