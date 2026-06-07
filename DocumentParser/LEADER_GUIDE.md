@@ -46,6 +46,8 @@
 | **iText7** | 9.1.0 | AGPL-3.0 ⚠️ | Parse PDF (text layer) |
 | **itext7.bouncy-castle-adapter** | 9.1.0 | AGPL-3.0 | Bắt buộc đi kèm iText7 9.x |
 | **DocumentFormat.OpenXml** | 3.3.0 | MIT ✅ | Parse DOCX |
+| **Tesseract** | 5.2.0 | Apache-2.0 ✅ | OCR cho PDF ảnh/scan |
+| **PDFtoImage** | 5.2.1 | MIT ✅ | Render PDF→ảnh để đưa vào OCR |
 
 > ⚠️ **Lưu ý license iText7**: Community edition dùng **AGPL-3.0**.
 > Nếu app phân phối dạng closed-source thì cần mua commercial license.
@@ -205,20 +207,35 @@ dotnet run -c Release
 ParseResult docxResult = docxParser.Parse(@"C:\Users\YourName\Documents\thesis.docx");
 ```
 
-### 5.3 Copy file vào thư mục SampleFiles
+### 5.3 Đọc 1 file bất kỳ + OCR (single-file mode)
 
-Cách đơn giản nhất: copy file vào `SampleFiles/` trong thư mục build rồi dùng:
+Cách nhanh nhất để test 1 file — in **toàn bộ** text từng trang + kết luận OCR:
 
 ```bash
-# Đường dẫn thư mục sau khi build:
-bin\Release\net10.0\SampleFiles\
+dotnet run -- "C:\duong-dan\toi-file\hoa-don-scan.pdf"
 ```
 
-```csharp
-var pdfFiles = new[]
-{
-    Path.Combine(sampleDir, "your_file.pdf"),
-};
+App sẽ:
+1. Thử đọc text layer trước (nhanh, chính xác)
+2. Trang nào rỗng (ảnh/scan) → render thành ảnh → đưa qua OCR (Tesseract vie+eng)
+3. In kết quả + đánh dấu trang nào dùng OCR (`[via OCR]`)
+
+Ví dụ output thực tế (file hóa đơn scan tiếng Việt):
+
+```
+  File   : hoa-don-scan.pdf
+  Format : PDF-ocr
+  OCR    : ENABLED (vie+eng)
+  Pages  : 1 total, 1 with text
+
+  PAGE 1  [via OCR]
+  ────────────────────────────────────────
+  TRAM 247 - CN THỦ ĐỨC
+  HOÁ ĐƠN THANH TOÁN
+  Số HĐ: 271413
+  ...
+
+  ✅ VERDICT: OCR WORKS. Recovered text from 1/1 image page(s) using vie+eng.
 ```
 
 ---
@@ -311,8 +328,15 @@ DocumentParser/
 │   └── ParsedPage.cs           ← Data model: ParsedPage + ParseResult
 │
 ├── Parsers/
-│   ├── PdfParser.cs            ← iText7: extract text từng trang PDF
+│   ├── PdfParser.cs            ← iText7: extract text + OCR fallback cho trang ảnh
 │   └── DocxParser.cs           ← Open XML SDK: walk paragraph/table, detect page break
+│
+├── Ocr/                        ← Tích hợp OCR
+│   ├── IOcrEngine.cs           ← Interface (đổi engine không sửa parser)
+│   ├── TesseractOcrEngine.cs   ← Tesseract (vie+eng)
+│   └── PdfPageRasterizer.cs    ← Render PDF→ảnh (PDFtoImage/PDFium)
+│
+├── tessdata/                   ← Language data: eng + vie (copy vào output)
 │
 ├── Generators/                 ← Chỉ dùng để tạo sample file — KHÔNG phải parser
 │   ├── PdfSampleGenerator.cs   ← Tạo 3 file PDF mẫu (chỉ import iText7)
@@ -336,19 +360,24 @@ DocumentParser/
 
 ## 8. Giới hạn kỹ thuật (Limitations)
 
-### PDF — iText7
+### PDF — iText7 (+ Tesseract OCR)
 
 ```
 Vấn đề                    │ Mức độ   │ Giải pháp
 ──────────────────────────┼──────────┼──────────────────────────────────────
-PDF scan (ảnh)            │ 🔴 Cao   │ Cần Tesseract.NET (OCR)
-License AGPL-3.0          │ 🔴 Cao   │ Mua commercial license nếu closed-source
+PDF scan (ảnh)            │ ✅ Đã xử lý│ OCR fallback (Tesseract vie+eng) — ĐÃ TÍCH HỢP
+Độ chính xác OCR          │ 🟡 TB   │ Tăng DPI, dùng tessdata_best, tiền xử lý ảnh
+License AGPL-3.0 (iText7) │ 🔴 Cao   │ Mua commercial license nếu closed-source
                           │          │ Hoặc dùng PdfPig (MIT, miễn phí)
 Cột đôi / layout phức tạp │ 🟡 TB   │ Dùng LocationTextExtractionStrategy
 Font đặc biệt (Type3/CID) │ 🟡 TB   │ Pre-process hoặc chấp nhận giới hạn
 AcroForm fields           │ 🟡 TB   │ Xử lý riêng qua PdfAcroForm API
 PDF có mật khẩu           │ 🟡 TB   │ Truyền password qua ReaderProperties
 ```
+
+> ✅ **OCR đã được tích hợp**: `PdfParser` tự động đọc text layer trước; trang nào rỗng
+> (ảnh/scan) sẽ được render thành ảnh 300 DPI rồi đưa qua Tesseract (vie+eng).
+> Text từ OCR được đánh dấu `Source = Ocr` và có cảnh báo "lower-confidence".
 
 ### DOCX — Open XML SDK
 
@@ -447,8 +476,18 @@ builder.Services.AddScoped<IDocumentParserService, DocumentParserService>();
 > Bình thường — NuGet đang download packages (~50MB). Từ lần 2 trở đi sẽ nhanh.
 
 **Q: PDF của tôi bị trả về toàn trang trắng?**
-> File đó là PDF scan (ảnh chụp). iText7 không đọc được ảnh.
-> Cần thêm OCR engine (Tesseract.NET) — đây là limitation được ghi nhận ở [mục 8](#8-giới-hạn-kỹ-thuật-limitations).
+> File đó là PDF scan (ảnh chụp). **OCR đã được tích hợp** nên app sẽ tự động đưa trang
+> ảnh qua Tesseract. Nếu vẫn trắng: ảnh quá mờ / độ phân giải thấp → thử tăng DPI
+> (tham số `ocrDpi` trong `PdfParser`, mặc định 300, thử 400–600).
+
+**Q: OCR đọc sai vài chữ tiếng Việt?**
+> Bình thường — OCR không bao giờ chính xác 100%, nhất là chữ có dấu hoặc scan mờ.
+> App đã đánh dấu text OCR là "lower-confidence". Để cải thiện: tải `tessdata_best`
+> (thay `tessdata_fast`), tăng DPI, hoặc tiền xử lý ảnh (khử nhiễu, tăng tương phản).
+
+**Q: Tôi muốn thêm ngôn ngữ OCR khác (ví dụ tiếng Nhật)?**
+> Tải file `jpn.traineddata` bỏ vào thư mục `tessdata/`, rồi đổi `languages: "vie+eng"`
+> thành `"jpn+vie+eng"` khi tạo `TesseractOcrEngine`.
 
 **Q: DOCX của tôi chỉ hiện 1 trang dù có nhiều trang?**
 > Open XML SDK không phải rendering engine — nó không tính page break tự động.

@@ -1,0 +1,409 @@
+@model MVC.ViewModels.AdminUsersIndexViewModel
+@using ServiceLayer.DTOs
+
+@{
+    ViewData["Title"] = "User Control";
+}
+
+<div class="d-flex flex-column gap-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <p class="text-secondary fw-bold text-uppercase mb-1" style="font-size: 11px; letter-spacing: .08em;">Admin Console</p>
+            <h1 class="h3 fw-bold mb-1">User Control</h1>
+            <p class="text-secondary mb-0">Create student and teacher accounts for the document workspace.</p>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <div class="bg-white border rounded-3 p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="text-secondary fw-semibold">Students</span>
+                    <span class="material-icons text-primary">school</span>
+                </div>
+                <div class="display-6 fw-bold mt-2">@Model.StudentCount</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="bg-white border rounded-3 p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="text-secondary fw-semibold">Teachers</span>
+                    <span class="material-icons text-success">co_present</span>
+                </div>
+                <div class="display-6 fw-bold mt-2">@Model.TeacherCount</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="bg-white border rounded-3 p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="text-secondary fw-semibold">Admins</span>
+                    <span class="material-icons text-warning">admin_panel_settings</span>
+                </div>
+                <div class="display-6 fw-bold mt-2">@Model.AdminCount</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="bg-white border rounded-3 p-4 h-100">
+                <div class="d-flex align-items-center justify-content-between">
+                    <span class="text-secondary fw-semibold">Blocked</span>
+                    <span class="material-icons text-danger">block</span>
+                </div>
+                <div class="display-6 fw-bold mt-2">@Model.BlockedCount</div>
+            </div>
+        </div>
+    </div>
+
+    @if (TempData["Success"] is string success)
+    {
+        <div class="alert alert-success mb-0">@success</div>
+    }
+    @if (TempData["Error"] is string error)
+    {
+        <div class="alert alert-danger mb-0">@error</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-xl-4">
+            <div class="bg-white border rounded-3 p-4 mb-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="material-icons text-primary">person_add</span>
+                    <h2 class="h5 fw-bold mb-0">Create Account</h2>
+                </div>
+
+                <form asp-action="Create" method="post" class="d-flex flex-column gap-3">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+                    <div>
+                        <label asp-for="CreateUser.FullName" class="form-label small fw-bold text-secondary">Full Name</label>
+                        <input asp-for="CreateUser.FullName" class="form-control" placeholder="Nguyen Van A" />
+                        <span asp-validation-for="CreateUser.FullName" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateUser.Email" class="form-label small fw-bold text-secondary">Email</label>
+                        <input asp-for="CreateUser.Email" class="form-control" placeholder="student@school.edu" />
+                        <span asp-validation-for="CreateUser.Email" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateUser.Password" class="form-label small fw-bold text-secondary">Temporary Password</label>
+                        <input asp-for="CreateUser.Password" class="form-control" autocomplete="new-password" />
+                        <span asp-validation-for="CreateUser.Password" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateUser.Role" class="form-label small fw-bold text-secondary">Role</label>
+                        <select asp-for="CreateUser.Role" asp-items="Model.CreateUser.RoleOptions" class="form-select"></select>
+                        <span asp-validation-for="CreateUser.Role" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateUser.Department" class="form-label small fw-bold text-secondary">Department</label>
+                        <input asp-for="CreateUser.Department" class="form-control" placeholder="Required for teacher profiles" />
+                        <span asp-validation-for="CreateUser.Department" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="CreateUser.SubjectId" class="form-label small fw-bold text-secondary">Teacher Subject</label>
+                        <select asp-for="CreateUser.SubjectId" asp-items="Model.SubjectOptions" class="form-select">
+                            <option value="">Select when role is Teacher</option>
+                        </select>
+                        <span asp-validation-for="CreateUser.SubjectId" class="text-danger small"></span>
+                    </div>
+
+                    <div class="form-check">
+                        <input asp-for="CreateUser.IsHeadOfDepartment" class="form-check-input" />
+                        <label asp-for="CreateUser.IsHeadOfDepartment" class="form-check-label small fw-semibold">
+                            Head of Department
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                        <span class="material-icons" style="font-size: 20px;">add</span>
+                        Create Account
+                    </button>
+                </form>
+            </div>
+
+            <div class="bg-white border rounded-3 p-4 mb-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="material-icons text-primary">upload_file</span>
+                    <h2 class="h5 fw-bold mb-0">Import Students</h2>
+                </div>
+
+                <form asp-action="ImportStudents" method="post" enctype="multipart/form-data" class="d-flex flex-column gap-3" data-student-import-form>
+                    @Html.AntiForgeryToken()
+                    <div>
+                        <label asp-for="ImportStudents.File" class="form-label small fw-bold text-secondary">Google Sheets Export</label>
+                        <input asp-for="ImportStudents.File" class="form-control" type="file" accept=".csv,.xlsx" />
+                        <span asp-validation-for="ImportStudents.File" class="text-danger small"></span>
+                    </div>
+
+                    <div class="small text-secondary">
+                        Required columns: MSSV, name, email.
+                    </div>
+
+                    <button type="submit" class="btn btn-outline-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2" data-student-import-submit>
+                        <span class="material-icons" style="font-size: 20px;">upload</span>
+                        <span data-student-import-submit-text>Import Students</span>
+                    </button>
+
+                    <div class="d-none" data-student-import-progress aria-live="polite">
+                        <div class="d-flex align-items-center justify-content-between small text-secondary mb-2">
+                            <span>Importing students and sending emails...</span>
+                            <span>Please wait</span>
+                        </div>
+                        <div class="progress" role="progressbar" aria-label="Student import progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <div class="bg-white border rounded-3 p-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="material-icons text-primary">lock_reset</span>
+                    <h2 class="h5 fw-bold mb-0">Reset Password</h2>
+                </div>
+
+                <form asp-action="ResetPassword" method="post" class="d-flex flex-column gap-3" data-password-reset-form>
+                    @Html.AntiForgeryToken()
+                    <div>
+                        <label asp-for="ResetPassword.Email" class="form-label small fw-bold text-secondary">Student or Teacher Email</label>
+                        <input asp-for="ResetPassword.Email" class="form-control" placeholder="user@school.edu" autocomplete="off" />
+                        <span asp-validation-for="ResetPassword.Email" class="text-danger small"></span>
+                    </div>
+
+                    <div class="small text-secondary">
+                        A new temporary password will be emailed to the student or teacher.
+                    </div>
+
+                    <button type="submit" class="btn btn-outline-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2" data-password-reset-submit>
+                        <span class="material-icons" style="font-size: 20px;">send</span>
+                        <span data-password-reset-submit-text>Send Reset Password</span>
+                    </button>
+
+                    <div class="d-none" data-password-reset-progress aria-live="polite">
+                        <div class="d-flex align-items-center justify-content-between small text-secondary mb-2">
+                            <span>Resetting password and sending email...</span>
+                            <span>Please wait</span>
+                        </div>
+                        <div class="progress" role="progressbar" aria-label="Password reset progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-xl-8">
+            @if (Model.ImportResult is not null)
+            {
+                <div class="bg-white border rounded-3 overflow-hidden mb-4">
+                    <div class="p-4 border-bottom d-flex flex-wrap align-items-center justify-content-between gap-3">
+                        <div>
+                            <h2 class="h5 fw-bold mb-1">Import Result</h2>
+                            <p class="text-secondary small mb-0">
+                                @Model.ImportResult.CreatedCount created,
+                                @Model.ImportResult.SkippedCount skipped,
+                                @Model.ImportResult.FailedCount failed.
+                            </p>
+                        </div>
+                        <span class="badge text-bg-light border">@Model.ImportResult.TotalRows rows</span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-4">Row</th>
+                                    <th>MSSV</th>
+                                    <th>Student</th>
+                                    <th>Status</th>
+                                    <th class="pe-4">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in Model.ImportResult.Rows)
+                                {
+                                    string statusClass = row.Status switch
+                                    {
+                                        "Created" => "text-bg-success",
+                                        "Skipped" => "text-bg-secondary",
+                                        _ => "text-bg-danger"
+                                    };
+
+                                    <tr>
+                                        <td class="ps-4">@row.RowNumber</td>
+                                        <td class="fw-semibold">@row.StudentCode</td>
+                                        <td>
+                                            <div class="fw-bold">@row.FullName</div>
+                                            <div class="text-secondary small">@row.Email</div>
+                                        </td>
+                                        <td><span class="badge @statusClass">@row.Status</span></td>
+                                        <td class="pe-4 text-secondary small">@row.Message</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            <div class="bg-white border rounded-3 overflow-hidden">
+                <div class="p-4 border-bottom d-flex align-items-center justify-content-between">
+                    <div>
+                        <h2 class="h5 fw-bold mb-1">Accounts</h2>
+                        <p class="text-secondary small mb-0">Current users with access to DocAssistant AI.</p>
+                    </div>
+                    <span class="badge text-bg-light border">@Model.Users.Count users</span>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">User</th>
+                                <th>MSSV</th>
+                                <th>Role</th>
+                                <th>Subject</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th class="pe-4 text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var user in Model.Users)
+                            {
+                                string badgeClass = user.Role switch
+                                {
+                                    UserRoles.Admin => "text-bg-warning",
+                                    UserRoles.Teacher => "text-bg-success",
+                                    _ => "text-bg-primary"
+                                };
+
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="fw-bold">@user.FullName</div>
+                                        <div class="text-secondary small">@user.Email</div>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(user.StudentCode))
+                                        {
+                                            <span class="fw-semibold">@user.StudentCode</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary small">None</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="badge @badgeClass text-capitalize">@user.Role</span>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(user.AssignedSubjectCode))
+                                        {
+                                            <div class="fw-semibold">@user.AssignedSubjectCode</div>
+                                            <div class="text-secondary small">@user.AssignedSubjectName</div>
+                                            @if (user.IsHeadOfDepartment)
+                                            {
+                                                <span class="badge text-bg-info mt-1">Head</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary small">None</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (user.IsBlocked)
+                                        {
+                                            <span class="badge text-bg-danger">Blocked</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge text-bg-success">Active</span>
+                                        }
+                                    </td>
+                                    <td class="text-secondary small">
+                                        @(user.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "Unknown")
+                                    </td>
+                                    <td class="pe-4 text-end">
+                                        @if (!user.IsBlocked
+                                            && user.Role != UserRoles.Admin
+                                            && user.UserId != Model.CurrentAdminUserId)
+                                        {
+                                            <form asp-action="Block" method="post" class="d-inline">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="userId" value="@user.UserId" />
+                                                <button type="submit" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1">
+                                                    <span class="material-icons" style="font-size: 18px;">block</span>
+                                                    Block
+                                                </button>
+                                            </form>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-secondary small">No action</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const bindProgress = (formSelector, submitSelector, textSelector, progressSelector, busyText) => {
+                const form = document.querySelector(formSelector);
+                if (!form) {
+                    return;
+                }
+
+                form.addEventListener("submit", () => {
+                    if (!form.checkValidity()) {
+                        return;
+                    }
+
+                    const submitButton = form.querySelector(submitSelector);
+                    const submitText = form.querySelector(textSelector);
+                    const progress = form.querySelector(progressSelector);
+
+                    if (submitButton) {
+                        submitButton.disabled = true;
+                    }
+
+                    if (submitText) {
+                        submitText.textContent = busyText;
+                    }
+
+                    if (progress) {
+                        progress.classList.remove("d-none");
+                    }
+                });
+            };
+
+            bindProgress(
+                "[data-student-import-form]",
+                "[data-student-import-submit]",
+                "[data-student-import-submit-text]",
+                "[data-student-import-progress]",
+                "Importing...");
+
+            bindProgress(
+                "[data-password-reset-form]",
+                "[data-password-reset-submit]",
+                "[data-password-reset-submit-text]",
+                "[data-password-reset-progress]",
+                "Sending...");
+        })();
+    </script>
+}

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 
@@ -35,13 +35,17 @@ public partial class Prn222Context : DbContext
 
     public virtual DbSet<Teacher> Teachers { get; set; }
 
+    public virtual DbSet<TeacherSubject> TeacherSubjects { get; set; }
+
     public virtual DbSet<TestQuestion> TestQuestions { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseNpgsql("Host=localhost;Port=5432;Database=prn222;Username=postgres;Password=123456");
+    {
+        // Database provider configuration is intentionally centralized in DI.
+        // This prevents Prn222Context from silently using a hardcoded fallback.
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -166,10 +170,13 @@ public partial class Prn222Context : DbContext
 
             entity.HasIndex(e => e.ChapterId, "idx_documents_chapter");
 
+            entity.HasIndex(e => e.SubjectId, "idx_documents_subject");
+
             entity.Property(e => e.DocumentId)
                 .HasDefaultValueSql("uuid_generate_v4()")
                 .HasColumnName("document_id");
             entity.Property(e => e.ChapterId).HasColumnName("chapter_id");
+            entity.Property(e => e.SubjectId).HasColumnName("subject_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("timestamp without time zone")
@@ -191,6 +198,10 @@ public partial class Prn222Context : DbContext
             entity.HasOne(d => d.Chapter).WithMany(p => p.Documents)
                 .HasForeignKey(d => d.ChapterId)
                 .HasConstraintName("fk_document_chapter");
+
+            entity.HasOne(d => d.Subject).WithMany(p => p.Documents)
+                .HasForeignKey(d => d.SubjectId)
+                .HasConstraintName("fk_document_subject");
 
             entity.HasOne(d => d.UploadedByNavigation).WithMany(p => p.Documents)
                 .HasForeignKey(d => d.UploadedBy)
@@ -305,6 +316,38 @@ public partial class Prn222Context : DbContext
                 .HasColumnName("subject_name");
         });
 
+        modelBuilder.Entity<TeacherSubject>(entity =>
+        {
+            entity.HasKey(e => e.TeacherSubjectId).HasName("teacher_subjects_pkey");
+
+            entity.ToTable("teacher_subjects");
+
+            entity.HasIndex(e => new { e.TeacherId, e.SubjectId }, "teacher_subjects_teacher_subject_key").IsUnique();
+            entity.HasIndex(e => e.SubjectId, "idx_teacher_subjects_subject");
+            entity.HasIndex(e => e.TeacherId, "idx_teacher_subjects_teacher");
+
+            entity.Property(e => e.TeacherSubjectId)
+                .HasDefaultValueSql("uuid_generate_v4()")
+                .HasColumnName("teacher_subject_id");
+            entity.Property(e => e.TeacherId).HasColumnName("teacher_id");
+            entity.Property(e => e.SubjectId).HasColumnName("subject_id");
+            entity.Property(e => e.IsHeadOfDepartment)
+                .HasDefaultValue(false)
+                .HasColumnName("is_head_of_department");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("created_at");
+
+            entity.HasOne(d => d.Teacher).WithMany(p => p.TeacherSubjects)
+                .HasForeignKey(d => d.TeacherId)
+                .HasConstraintName("fk_teacher_subject_teacher");
+
+            entity.HasOne(d => d.Subject).WithMany(p => p.TeacherSubjects)
+                .HasForeignKey(d => d.SubjectId)
+                .HasConstraintName("fk_teacher_subject_subject");
+        });
+
         modelBuilder.Entity<Teacher>(entity =>
         {
             entity.HasKey(e => e.TeacherId).HasName("teachers_pkey");
@@ -378,6 +421,12 @@ public partial class Prn222Context : DbContext
             entity.Property(e => e.FullName)
                 .HasMaxLength(255)
                 .HasColumnName("full_name");
+            entity.Property(e => e.IsBlocked)
+                .HasDefaultValue(false)
+                .HasColumnName("is_blocked");
+            entity.Property(e => e.StudentCode)
+                .HasMaxLength(50)
+                .HasColumnName("student_code");
             entity.Property(e => e.PasswordHash).HasColumnName("password_hash");
             entity.Property(e => e.Role)
                 .HasMaxLength(50)

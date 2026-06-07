@@ -9,6 +9,8 @@ public partial class Document
 
     public Guid ChapterId { get; set; }
 
+    public Guid SubjectId { get; set; }
+
     public string Title { get; set; } = null!;
 
     public string FileUrl { get; set; } = null!;
@@ -24,6 +26,8 @@ public partial class Document
     public DateTime? CreatedAt { get; set; }
 
     public virtual Chapter Chapter { get; set; } = null!;
+
+    public virtual Subject Subject { get; set; } = null!;
 
     public virtual ICollection<Chunk> Chunks { get; set; } = new List<Chunk>();
 

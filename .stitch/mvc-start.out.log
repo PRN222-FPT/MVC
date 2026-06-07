@@ -1,0 +1,9 @@
+Using launch settings from MVC\Properties\launchSettings.json...
+[16:06:50 INF] Starting MVC host
+[16:06:57 INF] Document processing worker started
+[16:06:57 INF] Now listening on: http://127.0.0.1:5199
+[16:06:57 INF] Application started. Press Ctrl+C to shut down.
+[16:06:57 INF] Hosting environment: Development
+[16:06:57 INF] Content root path: C:\Users\kietta\Documents\SU26\PRN222\MVC\MVC
+[16:07:01 WRN] Failed to determine the https port for redirect.
+[16:07:01 INF] HTTP GET /Account/Login responded 200 in 387.4275 ms

@@ -41,8 +41,16 @@ Desktop.ini
 
 # User-secrets and developer overrides
 appsettings.local.json
+appsettings.Local.json
 secrets.json
 .microsoft.dotnet.secret.json
 
+# Uploaded files (runtime storage, not source)
+uploads/
+**/uploads/
+
 # CodeGraph and tool analysis directories
 .codegraph/
+
+# Temporary build/output directories
+.tmp/

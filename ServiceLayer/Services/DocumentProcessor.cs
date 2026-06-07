@@ -1,0 +1,256 @@
+using DataAccessLayer.Models;
+using DataAccessLayer.UnitOfWork;
+using DocumentParser.Ocr;
+using DocumentParser.Parsers;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using ServiceLayer.Interfaces;
+using ServiceLayer.Options;
+
+namespace ServiceLayer.Services;
+
+/// <summary>
+/// Background processing for a queued document:
+/// Loads document metadata → parses PDF/DOCX → chunks text → embeds chunks →
+/// upserts to Qdrant → persists to PostgreSQL → updates status to completed/failed.
+/// </summary>
+public sealed class DocumentProcessor : IDocumentProcessor
+{
+    private readonly Prn222Context _context;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IStorageService _storageService;
+    private readonly IRecursiveChunkingService _chunkingService;
+    private readonly IEmbeddingService _embeddingService;
+    private readonly IQdrantService _qdrantService;
+    private readonly OcrOptions _ocrOptions;
+    private readonly ILogger<DocumentProcessor> _logger;
+
+    public DocumentProcessor(
+        Prn222Context context,
+        IUnitOfWork unitOfWork,
+        IStorageService storageService,
+        IRecursiveChunkingService chunkingService,
+        IEmbeddingService embeddingService,
+        IQdrantService qdrantService,
+        IOptions<OcrOptions> ocrOptions,
+        ILogger<DocumentProcessor> logger)
+    {
+        _context = context;
+        _unitOfWork = unitOfWork;
+        _storageService = storageService;
+        _chunkingService = chunkingService;
+        _embeddingService = embeddingService;
+        _qdrantService = qdrantService;
+        _ocrOptions = ocrOptions.Value;
+        _logger = logger;
+    }
+
+    public async Task ProcessAsync(Guid documentId, CancellationToken cancellationToken = default)
+    {
+        ProcessingJob? job = await _context.ProcessingJobs
+            .Where(j => j.DocumentId == documentId)
+            .OrderByDescending(j => j.StartedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        try
+        {
+            if (job is not null)
+            {
+                job.JobStatus = "processing";
+                job.StartedAt = UnspecifiedNow();
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
+
+            // 1. Fetch document metadata
+            var document = await _unitOfWork.Documents.GetByIdAsync(documentId);
+            if (document is null)
+            {
+                throw new KeyNotFoundException($"Document with ID '{documentId}' was not found.");
+            }
+
+            _logger.LogInformation("Parsing and chunking document {DocumentId} ({FileType})", documentId, document.FileType);
+
+            // 2. Open document read stream
+            await using var fileStream = await _storageService.OpenReadAsync(document.FileUrl, cancellationToken);
+
+            // 3. Initialize OCR engine if enabled
+            IOcrEngine? ocrEngine = null;
+            if (_ocrOptions.EnableOcr)
+            {
+                string tessdataPath = _ocrOptions.TessdataPath ?? Path.Combine(AppContext.BaseDirectory, "tessdata");
+                if (Directory.Exists(tessdataPath))
+                {
+                    _logger.LogInformation("Initializing Tesseract OCR with path: {TessdataPath}", tessdataPath);
+                    ocrEngine = new TesseractOcrEngine(tessdataPath, _ocrOptions.Languages);
+                }
+                else
+                {
+                    _logger.LogWarning("Tessdata directory not found at '{TessdataPath}'. Skipping OCR fallback.", tessdataPath);
+                }
+            }
+
+            // 4. Parse document pages
+            IReadOnlyList<DocumentParser.Models.ParsedPage> pages;
+            try
+            {
+                string fileType = document.FileType?.ToLowerInvariant() ?? string.Empty;
+                if (fileType == "pdf")
+                {
+                    var parser = new PdfParser(ocrEngine, _ocrOptions.Dpi);
+                    var parseResult = parser.Parse(fileStream, document.Title);
+                    pages = parseResult.Pages;
+                }
+                else if (fileType == "docx")
+                {
+                    var parser = new DocxParser();
+                    var parseResult = parser.Parse(fileStream, document.Title);
+                    pages = parseResult.Pages;
+                }
+                else
+                {
+                    throw new NotSupportedException($"File type '{fileType}' is not supported for parsing.");
+                }
+            }
+            finally
+            {
+                if (ocrEngine is IDisposable disposableOcr)
+                {
+                    disposableOcr.Dispose();
+                }
+            }
+
+            int nonEmptyPageCount = pages.Count(page => !page.IsEmpty && !string.IsNullOrWhiteSpace(page.Text));
+            int extractedCharacterCount = pages.Sum(page => string.IsNullOrWhiteSpace(page.Text) ? 0 : page.Text.Length);
+            _logger.LogInformation(
+                "Document {DocumentId} extraction completed. Pages: {PageCount}; non-empty pages: {NonEmptyPageCount}; extracted characters: {ExtractedCharacterCount}.",
+                documentId,
+                pages.Count,
+                nonEmptyPageCount,
+                extractedCharacterCount);
+
+            // 5. Chunk page-by-page, preserving page number from ChunkDto
+            var chunkDtos = _chunkingService.ChunkDocument(pages);
+            int skippedEmptyChunks = chunkDtos.Count(dto => string.IsNullOrWhiteSpace(dto.Content));
+            var validChunkDtos = chunkDtos
+                .Where(dto => !string.IsNullOrWhiteSpace(dto.Content))
+                .ToList();
+
+            _logger.LogInformation(
+                "Document {DocumentId} chunked into {ChunkCount} chunks; skipped {SkippedChunkCount} empty chunks.",
+                documentId,
+                chunkDtos.Count,
+                skippedEmptyChunks);
+
+            var newChunks = validChunkDtos.Select(dto => new Chunk
+            {
+                ChunkId = Guid.NewGuid(),
+                DocumentId = documentId,
+                ChunkIndex = dto.ChunkIndex,
+                Content = dto.Content.Trim(),
+                CreatedAt = UnspecifiedNow()
+            }).ToList();
+
+            if (newChunks.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "No extractable text was found in the document, so no chunks could be created.");
+            }
+
+            // 6. Embed chunks
+            IReadOnlyList<string> texts = newChunks.Select(c => c.Content).ToList();
+            IReadOnlyList<float[]> embeddings = await _embeddingService.CreateEmbeddingsAsync(texts, cancellationToken);
+
+            int firstEmbeddingDimension = embeddings.FirstOrDefault(e => e is { Length: > 0 })?.Length ?? 0;
+            _logger.LogInformation(
+                "Embedding service returned {EmbeddingCount} embeddings for {ChunkCount} chunks. First valid embedding dimension: {EmbeddingDimension}.",
+                embeddings.Count,
+                newChunks.Count,
+                firstEmbeddingDimension);
+
+            // 7. Ensure Qdrant collection exists, then upsert vectors.
+            //    PageNo comes from ChunkDto (preserved from parser) — more reliable than regex on content.
+            await _qdrantService.CreateCollectionAsync(cancellationToken);
+            var points = new List<QdrantVectorPoint>(newChunks.Count);
+            int skippedInvalidVectors = 0;
+
+            for (int i = 0; i < newChunks.Count; i++)
+            {
+                float[]? embedding = i < embeddings.Count ? embeddings[i] : null;
+                if (embedding is null || embedding.Length == 0)
+                {
+                    skippedInvalidVectors++;
+                    _logger.LogWarning(
+                        "Skipping chunk {ChunkIndex} for document {DocumentId} because embedding was null or empty.",
+                        newChunks[i].ChunkIndex,
+                        documentId);
+                    continue;
+                }
+
+                points.Add(new QdrantVectorPoint(
+                    ChunkId: newChunks[i].ChunkId,
+                    DocumentId: documentId,
+                    PageNo: validChunkDtos[i].PageNumber,
+                    ChunkText: newChunks[i].Content,
+                    ChunkIndex: newChunks[i].ChunkIndex,
+                    Vector: embedding));
+            }
+
+            _logger.LogInformation(
+                "Prepared {VectorCount} Qdrant vectors for document {DocumentId}; skipped {SkippedVectorCount} invalid vectors.",
+                points.Count,
+                documentId,
+                skippedInvalidVectors);
+
+            if (points.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "No valid embedding vectors were generated, so Qdrant upsert cannot continue.");
+            }
+
+            await _qdrantService.UpsertVectorsAsync(points, cancellationToken);
+
+            // 8. Bulk delete old chunks and insert new ones
+            var existingChunks = _context.Chunks.Where(c => c.DocumentId == documentId);
+            _context.Chunks.RemoveRange(existingChunks);
+            await _context.Chunks.AddRangeAsync(newChunks, cancellationToken);
+
+            await _unitOfWork.Documents.UpdateStatusAsync(documentId, "completed");
+
+            if (job is not null)
+            {
+                job.JobStatus = "completed";
+                job.FinishedAt = UnspecifiedNow();
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Document {DocumentId} processed into {ChunkCount} chunks and upserted to Qdrant", documentId, newChunks.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Processing failed for document {DocumentId}", documentId);
+
+            if (job is not null)
+            {
+                job.JobStatus = "failed";
+                job.FinishedAt = UnspecifiedNow();
+                job.ErrorMessage = ex.Message;
+            }
+
+            try
+            {
+                await _unitOfWork.Documents.UpdateStatusAsync(documentId, "failed");
+                await _unitOfWork.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception dbEx)
+            {
+                _logger.LogError(dbEx, "Failed to save error status to database for document {DocumentId}", documentId);
+            }
+        }
+    }
+
+    // The processing_jobs timestamp columns are "timestamp without time zone".
+    // Npgsql rejects a UTC-kind DateTime for those, so store an Unspecified-kind value.
+    private static DateTime UnspecifiedNow() =>
+        DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified);
+}

@@ -1,0 +1,464 @@
+@{
+    ViewData["Title"] = "AI Q&A Chat";
+}
+
+@Html.AntiForgeryToken()
+
+<div class="row g-4 h-100">
+    <div class="col-lg-8 d-flex flex-column" style="height: calc(100vh - 160px);">
+        <div class="card border-light shadow-sm rounded-4 flex-grow-1 overflow-hidden d-flex flex-column bg-white">
+            <div class="card-body overflow-auto p-4 d-flex flex-column gap-4" id="chatContainer">
+                <!-- Chat messages will be dynamically appended here -->
+                <div class="d-flex gap-3">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary-subtle p-2 rounded-3 text-primary">
+                            <span class="material-icons">smart_toy</span>
+                        </div>
+                    </div>
+                    <div class="bg-light p-3 rounded-4" style="max-width: 80%;">
+                        <p class="mb-0 small">Chào bạn! Tôi là DocAssistant AI. Tôi có thể giúp bạn phân tích tài liệu, tóm tắt nội dung hoặc trả lời các câu hỏi liên quan đến file bạn đã tải lên. Bạn muốn bắt đầu từ đâu?</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-footer bg-white border-top p-3">
+                <div class="input-group">
+                    <input type="text" id="chatInput" class="form-control border-0 bg-light py-2 px-3" placeholder="Type your question about documents..." style="border-radius: 12px 0 0 12px;">
+                    <button id="sendBtn" class="btn btn-primary px-4 shadow-sm" style="border-radius: 0 12px 12px 0;">
+                        <span class="material-icons fs-5">send</span>
+                    </button>
+                </div>
+                <div class="mt-2 text-center">
+                    <p class="text-secondary" style="font-size: 11px;">AI-generated responses can contain errors. Verify critical information.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card border-light shadow-sm rounded-4 h-100 bg-white">
+            <div class="card-header bg-white border-bottom-0 pt-4 px-4 pb-0">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h3 class="h6 fw-bold mb-0">Recent Chats</h3>
+                    <button type="button" id="newChatBtn" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-1">
+                        <span class="material-icons" style="font-size: 16px;">add</span> New
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-2 overflow-auto" id="historyList" style="max-height: calc(100vh - 220px);">
+                <div class="p-3 text-secondary small" id="historyStatus">Loading chat history...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="citationModal" tabindex="-1" aria-labelledby="citationModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content rounded-4 border-0 shadow">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title h5 fw-bold" id="citationModalTitle">Citation</h2>
+                    <p class="mb-0 small text-secondary" id="citationModalMeta"></p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <pre id="citationModalContent" class="mb-0 small bg-light rounded-3 p-3 text-wrap" style="white-space: pre-wrap;"></pre>
+            </div>
+            <div class="modal-footer">
+                <a id="citationDocumentLink" href="#" target="_blank" rel="noopener" class="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+                    <span class="material-icons" style="font-size: 18px;">open_in_new</span>
+                    Open document
+                </a>
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .hover-bg-light:hover {
+        background-color: #f8f9ff;
+        cursor: pointer;
+    }
+    .role-button {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .citation-button {
+        max-width: 100%;
+        text-align: left;
+    }
+    .citation-button:hover {
+        background-color: #eef4ff !important;
+    }
+</style>
+
+@section Scripts {
+<script>
+    let currentSessionId = null;
+    let chatHistory = [];
+
+    const chatContainer = document.getElementById('chatContainer');
+    const chatInput = document.getElementById('chatInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const historyList = document.getElementById('historyList');
+    const historyStatus = document.getElementById('historyStatus');
+    const citationModalElement = document.getElementById('citationModal');
+    const citationModalTitle = document.getElementById('citationModalTitle');
+    const citationModalMeta = document.getElementById('citationModalMeta');
+    const citationModalContent = document.getElementById('citationModalContent');
+    const citationDocumentLink = document.getElementById('citationDocumentLink');
+    const citationModal = citationModalElement ? new bootstrap.Modal(citationModalElement) : null;
+    const csrfToken = document.querySelector('input[name="__RequestVerificationToken"]').value;
+
+    async function sendMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+
+        chatInput.value = '';
+        chatInput.disabled = true;
+        sendBtn.disabled = true;
+
+        // Render User Message
+        appendUserMessage(text);
+        scrollChat();
+
+        // Render Typing Indicator
+        const typingIndicator = appendTypingIndicator();
+        scrollChat();
+
+        try {
+            const response = await fetch('/Chat/Query', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': csrfToken
+                },
+                body: JSON.stringify({
+                    sessionId: currentSessionId,
+                    message: text
+                })
+            });
+
+            typingIndicator.remove();
+
+            if (!response.ok) {
+                const errData = await readJsonSafely(response);
+                appendErrorMessage(errData?.error || `Server error occurred (${response.status}).`);
+                return;
+            }
+
+            const data = await response.json();
+            
+            if (!data.sessionId) {
+                appendErrorMessage('Server response did not include a chat session id.');
+                return;
+            }
+
+            if (!currentSessionId) {
+                currentSessionId = data.sessionId;
+            }
+
+            // Render AI response
+            appendAiMessage(data.answer || '', data.citations || [], data.latency_ms ?? 0);
+            await loadChatHistory(currentSessionId);
+        } catch (err) {
+            typingIndicator.remove();
+            appendErrorMessage('Unable to complete the chat request. Please try again.');
+            console.error(err);
+        } finally {
+            chatInput.disabled = false;
+            sendBtn.disabled = false;
+            chatInput.focus();
+            scrollChat();
+        }
+    }
+
+    async function loadChatHistory(activeSessionId = currentSessionId) {
+        try {
+            const response = await fetch('/Chat/History', {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                renderHistoryError(`Unable to load chat history (${response.status}).`);
+                return;
+            }
+
+            chatHistory = await response.json();
+            renderChatHistory(activeSessionId);
+        } catch (err) {
+            renderHistoryError('Unable to load chat history.');
+            console.error(err);
+        }
+    }
+
+    function renderChatHistory(activeSessionId = currentSessionId) {
+        historyList.innerHTML = '';
+
+        if (!chatHistory || chatHistory.length === 0) {
+            historyList.innerHTML = '<div class="p-3 text-secondary small">No previous chats yet.</div>';
+            return;
+        }
+
+        chatHistory.forEach(session => {
+            const isActive = activeSessionId && session.sessionId === activeSessionId;
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = `w-100 text-start border-0 p-3 rounded-3 mb-1 role-button ${isActive ? 'bg-primary-subtle border-start border-4 border-primary' : 'bg-white hover-bg-light'}`;
+            item.dataset.sessionId = session.sessionId;
+            item.innerHTML = `
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="min-w-0">
+                        <h4 class="small fw-bold mb-1 text-truncate" title="${escapeHtml(session.title)}">${escapeHtml(session.title)}</h4>
+                        <p class="text-secondary mb-0" style="font-size: 11px;">
+                            ${escapeHtml(formatHistoryDate(session.lastMessageAt || session.startedAt))}
+                            · ${session.messageCount} messages
+                        </p>
+                    </div>
+                    <span class="material-icons text-secondary" style="font-size: 16px;">chevron_right</span>
+                </div>
+            `;
+            item.addEventListener('click', () => loadSessionMessages(session.sessionId));
+            historyList.appendChild(item);
+        });
+    }
+
+    function renderHistoryError(text) {
+        historyList.innerHTML = `<div class="p-3 text-danger small">${escapeHtml(text)}</div>`;
+    }
+
+    async function loadSessionMessages(sessionId) {
+        if (!sessionId) return;
+
+        try {
+            const response = await fetch(`/Chat/Sessions/${encodeURIComponent(sessionId)}/Messages`, {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+
+            if (!response.ok) {
+                appendErrorMessage(`Unable to load that chat session (${response.status}).`);
+                return;
+            }
+
+            const messages = await response.json();
+            currentSessionId = sessionId;
+            chatContainer.innerHTML = '';
+            messages.forEach(renderHistoryMessage);
+            renderChatHistory(currentSessionId);
+            scrollChat();
+        } catch (err) {
+            appendErrorMessage('Unable to load that chat session.');
+            console.error(err);
+        }
+    }
+
+    function renderHistoryMessage(message) {
+        if (message.senderRole && message.senderRole.toLowerCase() === 'user') {
+            appendUserMessage(message.messageContent || '');
+            return;
+        }
+
+        appendAiMessage(message.messageContent || '', [], 0);
+    }
+
+    function startNewChat() {
+        currentSessionId = null;
+        chatContainer.innerHTML = '';
+        appendWelcomeMessage();
+        renderChatHistory(null);
+        chatInput.focus();
+    }
+
+    function appendWelcomeMessage() {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'd-flex gap-3';
+        msgDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <div class="bg-primary-subtle p-2 rounded-3 text-primary">
+                    <span class="material-icons">smart_toy</span>
+                </div>
+            </div>
+            <div class="bg-light p-3 rounded-4" style="max-width: 80%;">
+                <p class="mb-0 small">ChÃ o báº¡n! TÃ´i lÃ  DocAssistant AI. TÃ´i cÃ³ thá»ƒ giÃºp báº¡n phÃ¢n tÃ­ch tÃ i liá»‡u, tÃ³m táº¯t ná»™i dung hoáº·c tráº£ lá»i cÃ¡c cÃ¢u há»i liÃªn quan Ä‘áº¿n file báº¡n Ä‘Ã£ táº£i lÃªn. Báº¡n muá»‘n báº¯t Ä‘áº§u tá»« Ä‘Ã¢u?</p>
+            </div>
+        `;
+        chatContainer.appendChild(msgDiv);
+    }
+
+    function appendUserMessage(text) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'd-flex gap-3 flex-row-reverse text-end';
+        msgDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" class="rounded-circle bg-primary-subtle" style="width: 40px; height: 40px;" alt="User avatar" />
+            </div>
+            <div class="bg-primary text-white p-3 rounded-4" style="max-width: 80%;">
+                <p class="mb-0 small text-start">${escapeHtml(text)}</p>
+            </div>
+        `;
+        chatContainer.appendChild(msgDiv);
+    }
+
+    function appendAiMessage(answer, citations, latencyMs) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'd-flex gap-3';
+        
+        let citationsHtml = '';
+        if (citations && citations.length > 0) {
+            citationsHtml = `
+                <div class="mt-3 pt-2 border-top">
+                    <p class="mb-1 text-muted fw-bold" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">Citations & Sources:</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        ${citations.map((c, i) => `
+                            <button type="button" class="citation-button badge bg-light text-dark border p-2 rounded-3" data-citation-index="${i}" style="font-size: 11px; display: inline-flex; align-items: center; gap: 4px;">
+                                <span class="material-icons align-middle text-primary" style="font-size: 14px;">description</span>
+                                <strong>${escapeHtml(c.documentTitle)}</strong> (Page ${c.pageNo}) 
+                                <span class="text-muted">[score: ${(c.score * 100).toFixed(0)}%]</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        msgDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <div class="bg-primary-subtle p-2 rounded-3 text-primary">
+                    <span class="material-icons">smart_toy</span>
+                </div>
+            </div>
+            <div class="bg-light p-3 rounded-4 flex-grow-1" style="max-width: 80%;">
+                <p class="mb-0 small text-start" style="white-space: pre-line;">${escapeHtml(answer)}</p>
+                ${citationsHtml}
+                <div class="mt-2 text-end text-muted" style="font-size: 9px;">
+                    Generated in ${latencyMs}ms
+                </div>
+            </div>
+        `;
+        msgDiv.querySelectorAll('.citation-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const citationIndex = Number.parseInt(button.dataset.citationIndex || '-1', 10);
+                const citation = citations[citationIndex];
+                if (citation) {
+                    openCitationModal(citation);
+                }
+            });
+        });
+        chatContainer.appendChild(msgDiv);
+    }
+
+    function openCitationModal(citation) {
+        if (!citationModal) return;
+
+        const documentTitle = citation.documentTitle || 'Untitled Document';
+        const pageNo = citation.pageNo || 0;
+        const chunkIndex = citation.chunkIndex || 0;
+        const score = Number.isFinite(citation.score) ? `${(citation.score * 100).toFixed(0)}% match` : 'Score unavailable';
+        const content = citation.chunkContent || citation.chunkPreview || 'Citation content is unavailable.';
+
+        citationModalTitle.textContent = documentTitle;
+        citationModalMeta.textContent = `Page ${pageNo} · Chunk ${chunkIndex} · ${score}`;
+        citationModalContent.textContent = content;
+        citationDocumentLink.href = buildDocumentCitationUrl(citation);
+        citationModal.show();
+    }
+
+    function buildDocumentCitationUrl(citation) {
+        const documentId = encodeURIComponent(citation.documentId || '');
+        const pageNo = encodeURIComponent(citation.pageNo || 0);
+        const chunkIndex = encodeURIComponent(citation.chunkIndex || 0);
+        return `/Documents/${documentId}/View?page=${pageNo}&chunkIndex=${chunkIndex}`;
+    }
+
+    function appendTypingIndicator() {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'd-flex gap-3';
+        msgDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <div class="bg-primary-subtle p-2 rounded-3 text-primary">
+                    <span class="material-icons">smart_toy</span>
+                </div>
+            </div>
+            <div class="bg-light p-3 rounded-4" style="max-width: 80%;">
+                <div class="d-flex gap-1 align-items-center py-1">
+                    <div class="spinner-grow spinner-grow-sm text-primary" role="status" style="width: 6px; height: 6px; animation-duration: 0.75s;"></div>
+                    <div class="spinner-grow spinner-grow-sm text-primary" role="status" style="width: 6px; height: 6px; animation-duration: 0.75s; animation-delay: 0.15s;"></div>
+                    <div class="spinner-grow spinner-grow-sm text-primary" role="status" style="width: 6px; height: 6px; animation-duration: 0.75s; animation-delay: 0.3s;"></div>
+                </div>
+            </div>
+        `;
+        chatContainer.appendChild(msgDiv);
+        return msgDiv;
+    }
+
+    function appendErrorMessage(text) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'd-flex gap-3';
+        msgDiv.innerHTML = `
+            <div class="flex-shrink-0">
+                <div class="bg-danger-subtle p-2 rounded-3 text-danger">
+                    <span class="material-icons">error_outline</span>
+                </div>
+            </div>
+            <div class="bg-danger-subtle text-danger-emphasis p-3 rounded-4 small" style="max-width: 80%;">
+                <p class="mb-0 text-start">${escapeHtml(text)}</p>
+            </div>
+        `;
+        chatContainer.appendChild(msgDiv);
+    }
+
+    async function readJsonSafely(response) {
+        try {
+            return await response.json();
+        } catch {
+            return null;
+        }
+    }
+
+    function scrollChat() {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function formatHistoryDate(value) {
+        if (!value) return 'No messages';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return 'Unknown time';
+        return date.toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    function escapeHtml(string) {
+        if (!string) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(string).replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    newChatBtn.addEventListener('click', startNewChat);
+    chatInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            sendMessage();
+        }
+    });
+
+    loadChatHistory();
+    chatInput.focus();
+</script>
+}

@@ -11,9 +11,13 @@ public partial class User
 
     public string Email { get; set; } = null!;
 
+    public string? StudentCode { get; set; }
+
     public string PasswordHash { get; set; } = null!;
 
     public string? Role { get; set; }
+
+    public bool IsBlocked { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 

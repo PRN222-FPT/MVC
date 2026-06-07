@@ -1,0 +1,49 @@
+@{
+    ViewData["Title"] = "Document Library";
+}
+
+<div class="d-flex justify-content-between align-items-end mb-4">
+    <div>
+        <h2 class="display-6 fw-bold mb-1">Document Library</h2>
+        <p class="text-secondary">Manage and access all uploaded documents for AI analysis.</p>
+    </div>
+    <a asp-action="Upload" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+        <span class="material-icons">cloud_upload</span> Upload New
+    </a>
+</div>
+
+<div class="card border-light shadow-sm rounded-4 overflow-hidden">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="ps-4 py-3 text-uppercase text-secondary small fw-bold" style="width: 40%;">File Name</th>
+                        <th class="py-3 text-uppercase text-secondary small fw-bold">Type</th>
+                        <th class="py-3 text-uppercase text-secondary small fw-bold">Date Uploaded</th>
+                        <th class="py-3 text-uppercase text-secondary small fw-bold">Status</th>
+                        <th class="pe-4 py-3 text-uppercase text-secondary small fw-bold text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="border-top-0">
+                    <tr>
+                        <td class="ps-4 py-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <span class="material-icons text-danger opacity-75">picture_as_pdf</span>
+                                <span class="fw-medium">Q3_Financial_Report_Final.pdf</span>
+                            </div>
+                        </td>
+                        <td class="py-3 text-secondary small">PDF Document</td>
+                        <td class="py-3 text-secondary small">Oct 24, 2023</td>
+                        <td class="py-3">
+                            <span class="status-badge bg-primary-subtle text-primary">Ready</span>
+                        </td>
+                        <td class="pe-4 py-3 text-end">
+                            <button class="btn btn-link p-0 text-secondary border-0"><span class="material-icons">more_vert</span></button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
