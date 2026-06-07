@@ -32,6 +32,9 @@ try
     Log.Information("Starting MVC host");
 
     var builder = WebApplication.CreateBuilder(args);
+    builder.Configuration.Sources.Clear();
+    builder.Configuration
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
     // ----- Logging: route all ASP.NET Core logging through Serilog -----
     builder.Host.UseSerilog();
@@ -76,7 +79,7 @@ try
     {
         throw new InvalidOperationException(
             "ConnectionStrings:DefaultConnection is not configured. " +
-            "Set it via appsettings, user-secrets, or an environment variable.");
+            "Set it in appsettings.json.");
     }
 
     builder.Services.AddDbContext<Prn222Context>(options =>
