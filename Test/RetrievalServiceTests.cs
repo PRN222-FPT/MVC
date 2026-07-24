@@ -30,11 +30,11 @@ public class RetrievalServiceTests
         }
     }
 
-    private class FakeQdrantService : IQdrantService
+    private class FakeVectorSearchService : IVectorSearchService
     {
-        private readonly List<QdrantSearchResult> _resultsToReturn;
+        private readonly List<VectorSearchResult> _resultsToReturn;
 
-        public FakeQdrantService(List<QdrantSearchResult> resultsToReturn)
+        public FakeVectorSearchService(List<VectorSearchResult> resultsToReturn)
         {
             _resultsToReturn = resultsToReturn;
         }
@@ -42,17 +42,7 @@ public class RetrievalServiceTests
         public int LastLimit { get; private set; }
         public bool SearchCalled { get; private set; }
 
-        public Task CreateCollectionAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task UpsertVectorsAsync(IEnumerable<QdrantVectorPoint> points, CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
-
-        public Task<List<QdrantSearchResult>> SearchAsync(float[] queryVector, int limit = 5, CancellationToken cancellationToken = default)
+        public Task<List<VectorSearchResult>> SearchAsync(float[] queryVector, int limit = 5, CancellationToken cancellationToken = default)
         {
             SearchCalled = true;
             LastLimit = limit;
@@ -65,9 +55,9 @@ public class RetrievalServiceTests
     {
         // Arrange
         var embedding = new FakeEmbeddingService();
-        var qdrant = new FakeQdrantService(new List<QdrantSearchResult>());
+        var vectorSearchService = new FakeVectorSearchService(new List<VectorSearchResult>());
         var logger = NullLogger<RetrievalService>.Instance;
-        var service = new RetrievalService(embedding, qdrant, logger);
+        var service = new RetrievalService(embedding, vectorSearchService, logger);
 
         // Act
         var result = await service.RetrieveContextAsync("   ");
@@ -75,7 +65,7 @@ public class RetrievalServiceTests
         // Assert
         Assert.Empty(result);
         Assert.False(embedding.CreateEmbeddingsCalled);
-        Assert.False(qdrant.SearchCalled);
+        Assert.False(vectorSearchService.SearchCalled);
     }
 
     [Fact]
@@ -84,18 +74,18 @@ public class RetrievalServiceTests
         // Arrange
         var embedding = new FakeEmbeddingService();
         var docId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>
+        var searchResults = new List<VectorSearchResult>
         {
-            new QdrantSearchResult(docId, 1, "Chunk 1", 0, 0.85f),
-            new QdrantSearchResult(docId, 1, "Chunk 2", 1, 0.70f),
-            new QdrantSearchResult(docId, 2, "Chunk 3", 2, 0.65f), // Borderline passes threshold
-            new QdrantSearchResult(docId, 2, "Chunk 4", 3, 0.64f), // Passes expansion threshold
-            new QdrantSearchResult(docId, 3, "Chunk 5", 4, 0.57f), // Fails expansion threshold
-            new QdrantSearchResult(docId, 3, "Chunk 5", 4, 0.40f)  // Fails threshold
+            new VectorSearchResult(docId, 1, "Chunk 1", 0, 0.85f),
+            new VectorSearchResult(docId, 1, "Chunk 2", 1, 0.70f),
+            new VectorSearchResult(docId, 2, "Chunk 3", 2, 0.65f), // Borderline passes threshold
+            new VectorSearchResult(docId, 2, "Chunk 4", 3, 0.64f), // Passes expansion threshold
+            new VectorSearchResult(docId, 3, "Chunk 5", 4, 0.57f), // Fails expansion threshold
+            new VectorSearchResult(docId, 3, "Chunk 5", 4, 0.40f)  // Fails threshold
         };
-        var qdrant = new FakeQdrantService(searchResults);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
         var logger = NullLogger<RetrievalService>.Instance;
-        var service = new RetrievalService(embedding, qdrant, logger);
+        var service = new RetrievalService(embedding, vectorSearchService, logger);
 
         // Act
         var results = await service.RetrieveContextAsync("search query");
@@ -104,8 +94,8 @@ public class RetrievalServiceTests
         Assert.True(embedding.CreateEmbeddingsCalled);
         Assert.NotNull(embedding.LastInputs);
         Assert.Equal("search query", embedding.LastInputs[0]);
-        Assert.True(qdrant.SearchCalled);
-        Assert.Equal(30, qdrant.LastLimit);
+        Assert.True(vectorSearchService.SearchCalled);
+        Assert.Equal(30, vectorSearchService.LastLimit);
         
         // Strong matches select the document; context expansion keeps additional
         // same-document chunks down to the lower expansion threshold.
@@ -123,12 +113,12 @@ public class RetrievalServiceTests
         // Arrange
         var embedding = new FakeEmbeddingService();
         var docId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>
+        var searchResults = new List<VectorSearchResult>
         {
-            new QdrantSearchResult(docId, 1, "PRN222 course overview", 0, 0.85f)
+            new VectorSearchResult(docId, 1, "PRN222 course overview", 0, 0.85f)
         };
-        var qdrant = new FakeQdrantService(searchResults);
-        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
+        var service = new RetrievalService(embedding, vectorSearchService, NullLogger<RetrievalService>.Instance);
 
         // Act
         var results = await service.RetrieveContextAsync("Introduce PRN222 to me");
@@ -149,12 +139,12 @@ public class RetrievalServiceTests
         // Arrange
         var embedding = new FakeEmbeddingService();
         var docId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>
+        var searchResults = new List<VectorSearchResult>
         {
-            new QdrantSearchResult(docId, 1, "Authentication overview", 0, 0.85f)
+            new VectorSearchResult(docId, 1, "Authentication overview", 0, 0.85f)
         };
-        var qdrant = new FakeQdrantService(searchResults);
-        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
+        var service = new RetrievalService(embedding, vectorSearchService, NullLogger<RetrievalService>.Instance);
 
         // Act
         var results = await service.RetrieveContextAsync("Tell me about authentication");
@@ -173,8 +163,8 @@ public class RetrievalServiceTests
     {
         // Arrange
         var embedding = new FakeEmbeddingService();
-        var qdrant = new FakeQdrantService(new List<QdrantSearchResult>());
-        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+        var vectorSearchService = new FakeVectorSearchService(new List<VectorSearchResult>());
+        var service = new RetrievalService(embedding, vectorSearchService, NullLogger<RetrievalService>.Instance);
 
         // Act
         await service.RetrieveContextAsync("What is the grading policy?");
@@ -191,14 +181,14 @@ public class RetrievalServiceTests
         // Arrange
         var embedding = new FakeEmbeddingService();
         var docId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>();
+        var searchResults = new List<VectorSearchResult>();
         for (int i = 1; i <= 8; i++)
         {
-            searchResults.Add(new QdrantSearchResult(docId, 1, $"Chunk {i}", i - 1, 0.80f)); // All pass threshold
+            searchResults.Add(new VectorSearchResult(docId, 1, $"Chunk {i}", i - 1, 0.80f)); // All pass threshold
         }
-        var qdrant = new FakeQdrantService(searchResults);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
         var logger = NullLogger<RetrievalService>.Instance;
-        var service = new RetrievalService(embedding, qdrant, logger);
+        var service = new RetrievalService(embedding, vectorSearchService, logger);
 
         // Act
         var results = await service.RetrieveContextAsync("query");
@@ -218,14 +208,14 @@ public class RetrievalServiceTests
         var embedding = new FakeEmbeddingService();
         var dominantDocId = Guid.NewGuid();
         var competingDocId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>
+        var searchResults = new List<VectorSearchResult>
         {
-            new QdrantSearchResult(dominantDocId, 1, "Strong dominant chunk", 0, 0.88f),
-            new QdrantSearchResult(dominantDocId, 2, "Expanded dominant chunk", 1, 0.59f),
-            new QdrantSearchResult(competingDocId, 1, "Competing expanded chunk", 0, 0.58f)
+            new VectorSearchResult(dominantDocId, 1, "Strong dominant chunk", 0, 0.88f),
+            new VectorSearchResult(dominantDocId, 2, "Expanded dominant chunk", 1, 0.59f),
+            new VectorSearchResult(competingDocId, 1, "Competing expanded chunk", 0, 0.58f)
         };
-        var qdrant = new FakeQdrantService(searchResults);
-        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
+        var service = new RetrievalService(embedding, vectorSearchService, NullLogger<RetrievalService>.Instance);
 
         // Act
         var results = await service.RetrieveContextAsync("What are the requirements?");
@@ -243,16 +233,16 @@ public class RetrievalServiceTests
         var embedding = new FakeEmbeddingService();
         var dominantDocId = Guid.NewGuid();
         var competingDocId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>
+        var searchResults = new List<VectorSearchResult>
         {
-            new QdrantSearchResult(competingDocId, 1, "Competing top chunk", 0, 0.91f),
-            new QdrantSearchResult(dominantDocId, 1, "Dominant chunk 1", 0, 0.89f),
-            new QdrantSearchResult(dominantDocId, 2, "Dominant chunk 2", 1, 0.88f),
-            new QdrantSearchResult(dominantDocId, 3, "Dominant chunk 3", 2, 0.87f),
-            new QdrantSearchResult(competingDocId, 2, "Competing weaker chunk", 1, 0.66f)
+            new VectorSearchResult(competingDocId, 1, "Competing top chunk", 0, 0.91f),
+            new VectorSearchResult(dominantDocId, 1, "Dominant chunk 1", 0, 0.89f),
+            new VectorSearchResult(dominantDocId, 2, "Dominant chunk 2", 1, 0.88f),
+            new VectorSearchResult(dominantDocId, 3, "Dominant chunk 3", 2, 0.87f),
+            new VectorSearchResult(competingDocId, 2, "Competing weaker chunk", 1, 0.66f)
         };
-        var qdrant = new FakeQdrantService(searchResults);
-        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
+        var service = new RetrievalService(embedding, vectorSearchService, NullLogger<RetrievalService>.Instance);
 
         // Act
         var results = await service.RetrieveContextAsync("What is the grading policy?");
@@ -269,13 +259,13 @@ public class RetrievalServiceTests
         var embedding = new FakeEmbeddingService();
         var firstDocId = Guid.NewGuid();
         var secondDocId = Guid.NewGuid();
-        var searchResults = new List<QdrantSearchResult>
+        var searchResults = new List<VectorSearchResult>
         {
-            new QdrantSearchResult(firstDocId, 1, "First document chunk", 0, 0.90f),
-            new QdrantSearchResult(secondDocId, 1, "Second document chunk", 0, 0.88f)
+            new VectorSearchResult(firstDocId, 1, "First document chunk", 0, 0.90f),
+            new VectorSearchResult(secondDocId, 1, "Second document chunk", 0, 0.88f)
         };
-        var qdrant = new FakeQdrantService(searchResults);
-        var service = new RetrievalService(embedding, qdrant, NullLogger<RetrievalService>.Instance);
+        var vectorSearchService = new FakeVectorSearchService(searchResults);
+        var service = new RetrievalService(embedding, vectorSearchService, NullLogger<RetrievalService>.Instance);
 
         // Act
         var results = await service.RetrieveContextAsync("Compare these documents");

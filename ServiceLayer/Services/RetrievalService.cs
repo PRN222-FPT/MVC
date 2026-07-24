@@ -14,7 +14,7 @@ namespace ServiceLayer.Services;
 public sealed class RetrievalService : IRetrievalService
 {
     private readonly IEmbeddingService _embeddingService;
-    private readonly IQdrantService _qdrantService;
+    private readonly IVectorSearchService _vectorSearchService;
     private readonly ILogger<RetrievalService> _logger;
 
     private const float DocumentSelectionThreshold = 0.65f;
@@ -30,11 +30,11 @@ public sealed class RetrievalService : IRetrievalService
     /// </summary>
     public RetrievalService(
         IEmbeddingService embeddingService,
-        IQdrantService qdrantService,
+        IVectorSearchService vectorSearchService,
         ILogger<RetrievalService> logger)
     {
         _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
-        _qdrantService = qdrantService ?? throw new ArgumentNullException(nameof(qdrantService));
+        _vectorSearchService = vectorSearchService ?? throw new ArgumentNullException(nameof(vectorSearchService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -66,7 +66,7 @@ public sealed class RetrievalService : IRetrievalService
             _logger.LogInformation("Search query embedding generated with dimension {EmbeddingDimension}.", queryVector.Length);
 
             // 2. Retrieve a broader candidate set, then rerank for document coherence.
-            var searchResults = await _qdrantService.SearchAsync(
+            var searchResults = await _vectorSearchService.SearchAsync(
                 queryVector: queryVector,
                 limit: RawRetrieveLimit,
                 cancellationToken: cancellationToken
@@ -87,7 +87,7 @@ public sealed class RetrievalService : IRetrievalService
                 .Where(r => r.Score >= ContextExpansionThreshold)
                 .ToList();
 
-            IReadOnlyList<QdrantSearchResult> rerankedResults = AllowsMultipleDocuments(query)
+            IReadOnlyList<VectorSearchResult> rerankedResults = AllowsMultipleDocuments(query)
                 ? contextCandidates
                 : SelectDominantDocumentResults(documentSelectionCandidates, contextCandidates);
 
@@ -121,16 +121,16 @@ public sealed class RetrievalService : IRetrievalService
         }
     }
 
-    private static IReadOnlyList<QdrantSearchResult> SelectDominantDocumentResults(
-        IReadOnlyList<QdrantSearchResult> documentSelectionCandidates,
-        IReadOnlyList<QdrantSearchResult> contextCandidates)
+    private static IReadOnlyList<VectorSearchResult> SelectDominantDocumentResults(
+        IReadOnlyList<VectorSearchResult> documentSelectionCandidates,
+        IReadOnlyList<VectorSearchResult> contextCandidates)
     {
         if (contextCandidates.Count == 0)
         {
             return contextCandidates;
         }
 
-        IReadOnlyList<QdrantSearchResult> rankingCandidates = documentSelectionCandidates.Count > 0
+        IReadOnlyList<VectorSearchResult> rankingCandidates = documentSelectionCandidates.Count > 0
             ? documentSelectionCandidates
             : contextCandidates;
 

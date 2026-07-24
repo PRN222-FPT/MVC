@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-prn222}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-123456}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database_script.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-prn222}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-prn222};Username=${POSTGRES_USER:-admin};Password=${POSTGRES_PASSWORD:-123456}"
+      AdminSeed__Email: ${ADMIN_EMAIL:-admin@gmail.com}
+      AdminSeed__Password: ${ADMIN_PASSWORD:-admin@123}
+      Gemini__ApiKey: ${GEMINI_API_KEY:-}
+      Gemini__OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__FromAddress: ${SMTP_FROM_ADDRESS:-}
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres_data:
+  uploads_data:
+
+networks:
+  default:
+    # Pinned explicitly: this Docker daemon defaults new user-defined networks to
+    # IPv6-only (EnableIPv4 comes back false) unless IPv4 is requested explicitly,
+    # which silently breaks all outbound IPv4 connectivity (containers can't reach
+    # IPv4-only hosts like the Gemini API) even though DNS resolution still works.
+    enable_ipv4: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
