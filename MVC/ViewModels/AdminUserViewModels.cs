@@ -12,6 +12,8 @@ public sealed class AdminUsersIndexViewModel
 
     public ResetAccountPasswordViewModel ResetPassword { get; set; } = new();
 
+    public AssignTeacherSubjectViewModel AssignTeacherSubject { get; set; } = new();
+
     public StudentImportResultViewModel? ImportResult { get; set; }
 
     public IReadOnlyList<AdminUserListItemViewModel> Users { get; set; } = [];
@@ -27,6 +29,8 @@ public sealed class AdminUsersIndexViewModel
     public Guid? CurrentAdminUserId { get; set; }
 
     public IEnumerable<SelectListItem> SubjectOptions { get; set; } = [];
+
+    public IEnumerable<SelectListItem> TeacherOptions { get; set; } = [];
 }
 
 public sealed class AdminUserListItemViewModel
@@ -74,15 +78,22 @@ public sealed class CreateUserViewModel
     [StringLength(255, ErrorMessage = "Department cannot exceed 255 characters.")]
     public string? Department { get; set; }
 
-    public Guid? SubjectId { get; set; }
-
-    public bool IsHeadOfDepartment { get; set; }
-
     public IEnumerable<SelectListItem> RoleOptions { get; set; } =
     [
         new("Student", UserRoles.Student),
         new("Teacher", UserRoles.Teacher)
     ];
+}
+
+public sealed class AssignTeacherSubjectViewModel
+{
+    [Required(ErrorMessage = "Select a teacher.")]
+    public Guid? UserId { get; set; }
+
+    [Required(ErrorMessage = "Select a subject.")]
+    public Guid? SubjectId { get; set; }
+
+    public bool IsHeadOfDepartment { get; set; }
 }
 
 public sealed class ImportStudentsViewModel

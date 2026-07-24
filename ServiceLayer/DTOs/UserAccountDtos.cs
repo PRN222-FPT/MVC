@@ -49,11 +49,18 @@ public sealed record CreateManagedUserDto(
     string Email,
     string Password,
     string Role,
-    string? Department,
-    Guid? SubjectId = null,
-    bool IsHeadOfDepartment = false);
+    string? Department);
 
 public sealed record CreateManagedUserResultDto(
+    bool Succeeded,
+    string? ErrorMessage);
+
+public sealed record AssignTeacherSubjectDto(
+    Guid UserId,
+    Guid SubjectId,
+    bool IsHeadOfDepartment);
+
+public sealed record AssignTeacherSubjectResultDto(
     bool Succeeded,
     string? ErrorMessage);
 

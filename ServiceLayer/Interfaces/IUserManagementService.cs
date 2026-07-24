@@ -12,6 +12,10 @@ public interface IUserManagementService
         CreateManagedUserDto request,
         CancellationToken cancellationToken = default);
 
+    Task<AssignTeacherSubjectResultDto> AssignTeacherSubjectAsync(
+        AssignTeacherSubjectDto request,
+        CancellationToken cancellationToken = default);
+
     Task<StudentAccountImportResultDto> ImportStudentAccountsAsync(
         string fileName,
         Stream fileContent,

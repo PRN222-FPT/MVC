@@ -28,7 +28,11 @@ public sealed class AdminUsersController : Controller
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken)
     {
-        return View(await BuildIndexViewModelAsync(new CreateUserViewModel(), new ResetAccountPasswordViewModel(), cancellationToken));
+        return View(await BuildIndexViewModelAsync(
+            new CreateUserViewModel(),
+            new ResetAccountPasswordViewModel(),
+            new AssignTeacherSubjectViewModel(),
+            cancellationToken));
     }
 
     [HttpPost]
@@ -39,7 +43,8 @@ public sealed class AdminUsersController : Controller
     {
         if (!ModelState.IsValid)
         {
-            return View("Index", await BuildIndexViewModelAsync(viewModel, new ResetAccountPasswordViewModel(), cancellationToken));
+            return View("Index", await BuildIndexViewModelAsync(
+                viewModel, new ResetAccountPasswordViewModel(), new AssignTeacherSubjectViewModel(), cancellationToken));
         }
 
         var result = await _userManagementService.CreateUserAsync(
@@ -48,18 +53,43 @@ public sealed class AdminUsersController : Controller
                 viewModel.Email,
                 viewModel.Password,
                 viewModel.Role,
-                viewModel.Department,
-                viewModel.SubjectId,
-                viewModel.IsHeadOfDepartment),
+                viewModel.Department),
             cancellationToken);
 
         if (!result.Succeeded)
         {
             ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Could not create the account.");
-            return View("Index", await BuildIndexViewModelAsync(viewModel, new ResetAccountPasswordViewModel(), cancellationToken));
+            return View("Index", await BuildIndexViewModelAsync(
+                viewModel, new ResetAccountPasswordViewModel(), new AssignTeacherSubjectViewModel(), cancellationToken));
         }
 
         TempData["Success"] = "Account created.";
+        return RedirectToAction(nameof(Index));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> AssignSubject(
+        [Bind(Prefix = "AssignTeacherSubject")] AssignTeacherSubjectViewModel viewModel,
+        CancellationToken cancellationToken)
+    {
+        if (!ModelState.IsValid || viewModel.UserId is null || viewModel.SubjectId is null)
+        {
+            return View("Index", await BuildIndexViewModelAsync(
+                new CreateUserViewModel(), new ResetAccountPasswordViewModel(), viewModel, cancellationToken));
+        }
+
+        AssignTeacherSubjectResultDto result = await _userManagementService.AssignTeacherSubjectAsync(
+            new AssignTeacherSubjectDto(viewModel.UserId.Value, viewModel.SubjectId.Value, viewModel.IsHeadOfDepartment),
+            cancellationToken);
+
+        if (!result.Succeeded)
+        {
+            TempData["Error"] = result.ErrorMessage ?? "Could not assign the subject.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["Success"] = "Subject assigned.";
         return RedirectToAction(nameof(Index));
     }
 
@@ -116,7 +146,8 @@ public sealed class AdminUsersController : Controller
     {
         if (!ModelState.IsValid)
         {
-            return View("Index", await BuildIndexViewModelAsync(new CreateUserViewModel(), viewModel, cancellationToken));
+            return View("Index", await BuildIndexViewModelAsync(
+                new CreateUserViewModel(), viewModel, new AssignTeacherSubjectViewModel(), cancellationToken));
         }
 
         ResetAccountPasswordResultDto result = await _userManagementService.ResetAccountPasswordAsync(
@@ -161,6 +192,7 @@ public sealed class AdminUsersController : Controller
     private async Task<AdminUsersIndexViewModel> BuildIndexViewModelAsync(
         CreateUserViewModel createUser,
         ResetAccountPasswordViewModel resetPassword,
+        AssignTeacherSubjectViewModel assignTeacherSubject,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<AdminUserListItemDto> users = await _userManagementService.GetUsersAsync(cancellationToken);
@@ -170,11 +202,17 @@ public sealed class AdminUsersController : Controller
         {
             CreateUser = createUser,
             ResetPassword = resetPassword,
+            AssignTeacherSubject = assignTeacherSubject,
             ImportResult = ReadImportResult(),
             CurrentAdminUserId = TryGetCurrentUserId(),
             SubjectOptions = subjects.Select(subject => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem(
                 $"{subject.SubjectCode} - {subject.SubjectName}",
                 subject.SubjectId.ToString())),
+            TeacherOptions = users
+                .Where(u => string.Equals(u.Role, UserRoles.Teacher, StringComparison.OrdinalIgnoreCase))
+                .Select(u => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem(
+                    $"{u.FullName} ({u.Email})",
+                    u.UserId.ToString())),
             Users = users.Select(u => new AdminUserListItemViewModel
             {
                 UserId = u.UserId,
