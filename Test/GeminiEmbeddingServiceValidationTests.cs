@@ -32,8 +32,8 @@ public sealed class GeminiEmbeddingServiceValidationTests
             ApiKey = "API_KEY",
             EmbeddingModelName = "gemini-embedding-001"
         });
-        var qdrantOptions = Options.Create(new QdrantOptions { VectorSize = 3072 });
-        var service = new GeminiEmbeddingService(client, options, qdrantOptions, NullLogger<GeminiEmbeddingService>.Instance);
+        var vectorStoreOptions = Options.Create(new VectorStoreOptions { VectorSize = 3072 });
+        var service = new GeminiEmbeddingService(client, options, vectorStoreOptions, NullLogger<GeminiEmbeddingService>.Instance);
 
         ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
             () => service.CreateEmbeddingsAsync(["valid text", "   "]));

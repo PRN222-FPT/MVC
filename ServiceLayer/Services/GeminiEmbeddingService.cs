@@ -13,18 +13,18 @@ public sealed class GeminiEmbeddingService : IEmbeddingService
 
     private readonly Client _client;
     private readonly GeminiOptions _options;
-    private readonly QdrantOptions _qdrantOptions;
+    private readonly VectorStoreOptions _vectorStoreOptions;
     private readonly ILogger<GeminiEmbeddingService> _logger;
 
     public GeminiEmbeddingService(
         Client client,
         IOptions<GeminiOptions> options,
-        IOptions<QdrantOptions> qdrantOptions,
+        IOptions<VectorStoreOptions> vectorStoreOptions,
         ILogger<GeminiEmbeddingService> logger)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-        _qdrantOptions = qdrantOptions?.Value ?? throw new ArgumentNullException(nameof(qdrantOptions));
+        _vectorStoreOptions = vectorStoreOptions?.Value ?? throw new ArgumentNullException(nameof(vectorStoreOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -54,7 +54,7 @@ public sealed class GeminiEmbeddingService : IEmbeddingService
             "Creating Gemini embeddings using model {EmbeddingModel} for {InputCount} inputs. Requested dimension: {EmbeddingDimension}.",
             _options.EmbeddingModelName,
             inputs.Count,
-            _qdrantOptions.VectorSize);
+            _vectorStoreOptions.VectorSize);
 
         var embeddings = new List<float[]>(inputs.Count);
         for (int i = 0; i < inputs.Count; i++)
@@ -85,7 +85,7 @@ public sealed class GeminiEmbeddingService : IEmbeddingService
                     contents: input,
                     config: new EmbedContentConfig
                     {
-                        OutputDimensionality = _qdrantOptions.VectorSize
+                        OutputDimensionality = _vectorStoreOptions.VectorSize
                     },
                     cancellationToken: cancellationToken);
 
@@ -93,7 +93,7 @@ public sealed class GeminiEmbeddingService : IEmbeddingService
                     ? response.Embeddings[0]?.Values?.Select(value => (float)value).ToArray()
                     : null;
 
-                ValidateEmbedding(values, inputIndex, _qdrantOptions.VectorSize);
+                ValidateEmbedding(values, inputIndex, _vectorStoreOptions.VectorSize);
                 return values!;
             }
             catch (OperationCanceledException)

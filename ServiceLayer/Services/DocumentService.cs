@@ -119,7 +119,33 @@ public sealed class DocumentService : IDocumentService
             fileName,
             fileType,
             GetContentType(fileType),
-            content);
+            content,
+            document.Status ?? "pending");
+    }
+
+    public async Task<DocumentChunksResultDto> GetDocumentChunksAsync(
+        Guid documentId,
+        CancellationToken cancellationToken = default)
+    {
+        Document? document = await _unitOfWork.Documents
+            .Query()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate => candidate.DocumentId == documentId, cancellationToken);
+        if (document is null)
+        {
+            throw new KeyNotFoundException($"Document '{documentId}' does not exist.");
+        }
+
+        IReadOnlyList<Chunk> chunks = await _unitOfWork.Chunks.GetByDocumentIdAsync(documentId);
+
+        return new DocumentChunksResultDto(
+            document.DocumentId,
+            document.Title,
+            document.Status ?? "pending",
+            chunks
+                .OrderBy(chunk => chunk.ChunkIndex)
+                .Select(chunk => new DocumentChunkDto(chunk.ChunkId, chunk.ChunkIndex, chunk.Content, chunk.CreatedAt))
+                .ToList());
     }
 
     public async Task<UploadDocumentResult> InitiateUploadAsync(
@@ -182,7 +208,7 @@ public sealed class DocumentService : IDocumentService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 4) Hand off to the background worker via the in-process queue.
-        //    The worker calls IDocumentProcessor.ProcessAsync (parse → chunk → embed → upsert Qdrant).
+        //    The worker calls IDocumentProcessor.ProcessAsync (parse → chunk → embed → save to pgvector).
         await _queue.EnqueueAsync(documentId, cancellationToken);
 
         _logger.LogInformation(

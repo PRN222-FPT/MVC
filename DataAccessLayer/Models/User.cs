@@ -23,6 +23,8 @@ public partial class User
 
     public virtual ICollection<BenchmarkRun> BenchmarkRuns { get; set; } = new List<BenchmarkRun>();
 
+    public virtual ICollection<ChunkingSetting> ChunkingSettings { get; set; } = new List<ChunkingSetting>();
+
     public virtual ICollection<Document> Documents { get; set; } = new List<Document>();
 
     public virtual ICollection<Session> Sessions { get; set; } = new List<Session>();

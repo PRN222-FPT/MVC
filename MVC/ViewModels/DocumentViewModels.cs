@@ -73,6 +73,38 @@ public sealed class DocumentListItemViewModel
     };
 }
 
+public sealed class DocumentChunksViewModel
+{
+    public Guid DocumentId { get; set; }
+
+    public string Title { get; set; } = string.Empty;
+
+    public string Status { get; set; } = string.Empty;
+
+    public IReadOnlyList<ChunkItemViewModel> Chunks { get; set; } = [];
+
+    public bool IsCompleted => Status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+        || Status.Equals("processed", StringComparison.OrdinalIgnoreCase);
+
+    public string StatusBadgeClass => Status.ToLowerInvariant() switch
+    {
+        "completed" or "processed" => "bg-success-subtle text-success",
+        "failed" => "bg-danger-subtle text-danger",
+        "processing" => "bg-info-subtle text-info",
+        "queued" => "bg-warning-subtle text-warning",
+        _ => "bg-primary-subtle text-primary"
+    };
+}
+
+public sealed class ChunkItemViewModel
+{
+    public int ChunkIndex { get; set; }
+
+    public string Content { get; set; } = string.Empty;
+
+    public DateTime? CreatedAt { get; set; }
+}
+
 public sealed class DocumentViewerViewModel
 {
     public Guid DocumentId { get; set; }
@@ -89,5 +121,23 @@ public sealed class DocumentViewerViewModel
 
     public string DownloadUrl { get; set; } = string.Empty;
 
+    public string Status { get; set; } = string.Empty;
+
     public bool CanPreviewInline => FileType.Equals("pdf", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsTerminal => Status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+        || Status.Equals("processed", StringComparison.OrdinalIgnoreCase)
+        || Status.Equals("failed", StringComparison.OrdinalIgnoreCase);
+
+    public bool IsCompleted => Status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+        || Status.Equals("processed", StringComparison.OrdinalIgnoreCase);
+
+    public string StatusBadgeClass => Status.ToLowerInvariant() switch
+    {
+        "completed" or "processed" => "bg-success-subtle text-success",
+        "failed" => "bg-danger-subtle text-danger",
+        "processing" => "bg-info-subtle text-info",
+        "queued" => "bg-warning-subtle text-warning",
+        _ => "bg-primary-subtle text-primary"
+    };
 }

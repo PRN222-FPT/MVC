@@ -189,7 +189,28 @@ public class DocumentController : Controller
             FileType = document.FileType,
             ContentType = document.ContentType,
             InlineUrl = Url.Action(nameof(Inline), new { documentId }) ?? string.Empty,
-            DownloadUrl = Url.Action(nameof(Download), new { documentId }) ?? string.Empty
+            DownloadUrl = Url.Action(nameof(Download), new { documentId }) ?? string.Empty,
+            Status = document.Status
+        });
+    }
+
+    [HttpGet("{documentId:guid}/Chunks")]
+    [Authorize(Roles = UserRoles.Teacher)]
+    public async Task<IActionResult> Chunks(Guid documentId, CancellationToken cancellationToken)
+    {
+        DocumentChunksResultDto result = await _documentService.GetDocumentChunksAsync(documentId, cancellationToken);
+
+        return View(new DocumentChunksViewModel
+        {
+            DocumentId = result.DocumentId,
+            Title = result.Title,
+            Status = result.Status,
+            Chunks = result.Chunks.Select(chunk => new ChunkItemViewModel
+            {
+                ChunkIndex = chunk.ChunkIndex,
+                Content = chunk.Content,
+                CreatedAt = chunk.CreatedAt
+            }).ToList()
         });
     }
 

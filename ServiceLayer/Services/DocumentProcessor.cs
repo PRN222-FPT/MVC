@@ -5,6 +5,8 @@ using DocumentParser.Parsers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Pgvector;
+using ServiceLayer.DTOs;
 using ServiceLayer.Interfaces;
 using ServiceLayer.Options;
 
@@ -13,16 +15,17 @@ namespace ServiceLayer.Services;
 /// <summary>
 /// Background processing for a queued document:
 /// Loads document metadata → parses PDF/DOCX → chunks text → embeds chunks →
-/// upserts to Qdrant → persists to PostgreSQL → updates status to completed/failed.
+/// persists chunks with their embeddings to PostgreSQL → updates status to completed/failed.
 /// </summary>
 public sealed class DocumentProcessor : IDocumentProcessor
 {
     private readonly Prn222Context _context;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IStorageService _storageService;
-    private readonly IRecursiveChunkingService _chunkingService;
+    private readonly IFixedSizeChunkingService _chunkingService;
+    private readonly IChunkingSettingsService _chunkingSettingsService;
     private readonly IEmbeddingService _embeddingService;
-    private readonly IQdrantService _qdrantService;
+    private readonly IDocumentProcessingNotifier _notifier;
     private readonly OcrOptions _ocrOptions;
     private readonly ILogger<DocumentProcessor> _logger;
 
@@ -30,9 +33,10 @@ public sealed class DocumentProcessor : IDocumentProcessor
         Prn222Context context,
         IUnitOfWork unitOfWork,
         IStorageService storageService,
-        IRecursiveChunkingService chunkingService,
+        IFixedSizeChunkingService chunkingService,
+        IChunkingSettingsService chunkingSettingsService,
         IEmbeddingService embeddingService,
-        IQdrantService qdrantService,
+        IDocumentProcessingNotifier notifier,
         IOptions<OcrOptions> ocrOptions,
         ILogger<DocumentProcessor> logger)
     {
@@ -40,8 +44,9 @@ public sealed class DocumentProcessor : IDocumentProcessor
         _unitOfWork = unitOfWork;
         _storageService = storageService;
         _chunkingService = chunkingService;
+        _chunkingSettingsService = chunkingSettingsService;
         _embeddingService = embeddingService;
-        _qdrantService = qdrantService;
+        _notifier = notifier;
         _ocrOptions = ocrOptions.Value;
         _logger = logger;
     }
@@ -61,6 +66,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 job.StartedAt = UnspecifiedNow();
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
+
+            await _notifier.NotifyProgressAsync(documentId, 5, "Đang xử lý", cancellationToken);
 
             // 1. Fetch document metadata
             var document = await _unitOfWork.Documents.GetByIdAsync(documentId);
@@ -129,8 +136,12 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 nonEmptyPageCount,
                 extractedCharacterCount);
 
-            // 5. Chunk page-by-page, preserving page number from ChunkDto
-            var chunkDtos = _chunkingService.ChunkDocument(pages);
+            await _notifier.NotifyProgressAsync(documentId, 30, "Đã trích xuất văn bản", cancellationToken);
+
+            // 5. Chunk page-by-page, preserving page number from ChunkDto, using the
+            //    admin-configured fixed chunk size (characters).
+            ChunkingSettingsDto chunkingSettings = await _chunkingSettingsService.GetSettingsAsync(cancellationToken);
+            var chunkDtos = _chunkingService.ChunkDocument(pages, chunkingSettings.ChunkSizeCharacters);
             int skippedEmptyChunks = chunkDtos.Count(dto => string.IsNullOrWhiteSpace(dto.Content));
             var validChunkDtos = chunkDtos
                 .Where(dto => !string.IsNullOrWhiteSpace(dto.Content))
@@ -142,12 +153,15 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 chunkDtos.Count,
                 skippedEmptyChunks);
 
+            // No .Trim() here: fixed-size chunking hard-cuts on a character budget with no
+            // regard for word/whitespace boundaries, so trimming would silently shrink a
+            // chunk below the admin-configured size whenever a cut lands on whitespace.
             var newChunks = validChunkDtos.Select(dto => new Chunk
             {
                 ChunkId = Guid.NewGuid(),
                 DocumentId = documentId,
                 ChunkIndex = dto.ChunkIndex,
-                Content = dto.Content.Trim(),
+                Content = dto.Content,
                 CreatedAt = UnspecifiedNow()
             }).ToList();
 
@@ -156,6 +170,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 throw new InvalidOperationException(
                     "No extractable text was found in the document, so no chunks could be created.");
             }
+
+            await _notifier.NotifyProgressAsync(documentId, 50, "Đã chia chunk", cancellationToken);
 
             // 6. Embed chunks
             IReadOnlyList<string> texts = newChunks.Select(c => c.Content).ToList();
@@ -168,10 +184,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 newChunks.Count,
                 firstEmbeddingDimension);
 
-            // 7. Ensure Qdrant collection exists, then upsert vectors.
-            //    PageNo comes from ChunkDto (preserved from parser) — more reliable than regex on content.
-            await _qdrantService.CreateCollectionAsync(cancellationToken);
-            var points = new List<QdrantVectorPoint>(newChunks.Count);
+            // 7. Attach each chunk's embedding so it saves together with the chunk row.
+            int chunksWithEmbeddings = 0;
             int skippedInvalidVectors = 0;
 
             for (int i = 0; i < newChunks.Count; i++)
@@ -181,34 +195,29 @@ public sealed class DocumentProcessor : IDocumentProcessor
                 {
                     skippedInvalidVectors++;
                     _logger.LogWarning(
-                        "Skipping chunk {ChunkIndex} for document {DocumentId} because embedding was null or empty.",
+                        "Skipping embedding for chunk {ChunkIndex} of document {DocumentId} because it was null or empty.",
                         newChunks[i].ChunkIndex,
                         documentId);
                     continue;
                 }
 
-                points.Add(new QdrantVectorPoint(
-                    ChunkId: newChunks[i].ChunkId,
-                    DocumentId: documentId,
-                    PageNo: validChunkDtos[i].PageNumber,
-                    ChunkText: newChunks[i].Content,
-                    ChunkIndex: newChunks[i].ChunkIndex,
-                    Vector: embedding));
+                newChunks[i].Embedding = new Vector(embedding);
+                chunksWithEmbeddings++;
             }
 
             _logger.LogInformation(
-                "Prepared {VectorCount} Qdrant vectors for document {DocumentId}; skipped {SkippedVectorCount} invalid vectors.",
-                points.Count,
+                "Prepared {EmbeddedCount} chunk embeddings for document {DocumentId}; skipped {SkippedVectorCount} invalid vectors.",
+                chunksWithEmbeddings,
                 documentId,
                 skippedInvalidVectors);
 
-            if (points.Count == 0)
+            if (chunksWithEmbeddings == 0)
             {
                 throw new InvalidOperationException(
-                    "No valid embedding vectors were generated, so Qdrant upsert cannot continue.");
+                    "No valid embedding vectors were generated, so document processing cannot continue.");
             }
 
-            await _qdrantService.UpsertVectorsAsync(points, cancellationToken);
+            await _notifier.NotifyProgressAsync(documentId, 80, "Đã tạo embedding", cancellationToken);
 
             // 8. Bulk delete old chunks and insert new ones
             var existingChunks = _context.Chunks.Where(c => c.DocumentId == documentId);
@@ -224,7 +233,9 @@ public sealed class DocumentProcessor : IDocumentProcessor
             }
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Document {DocumentId} processed into {ChunkCount} chunks and upserted to Qdrant", documentId, newChunks.Count);
+            _logger.LogInformation("Document {DocumentId} processed into {ChunkCount} chunks with embeddings", documentId, newChunks.Count);
+
+            await _notifier.NotifyCompletedAsync(documentId, newChunks.Count, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -246,6 +257,8 @@ public sealed class DocumentProcessor : IDocumentProcessor
             {
                 _logger.LogError(dbEx, "Failed to save error status to database for document {DocumentId}", documentId);
             }
+
+            await _notifier.NotifyFailedAsync(documentId, ex.Message, CancellationToken.None);
         }
     }
 

@@ -120,22 +120,6 @@ public sealed class UserManagementService : IUserManagementService
             return new CreateManagedUserResultDto(false, "An account with this email already exists.");
         }
 
-        Subject? assignedSubject = null;
-        if (normalizedRole == UserRoles.Teacher)
-        {
-            if (!request.SubjectId.HasValue || request.SubjectId.Value == Guid.Empty)
-            {
-                return new CreateManagedUserResultDto(false, "Teacher accounts must be assigned to a subject.");
-            }
-
-            assignedSubject = await _context.Subjects
-                .FirstOrDefaultAsync(subject => subject.SubjectId == request.SubjectId.Value, cancellationToken);
-            if (assignedSubject is null)
-            {
-                return new CreateManagedUserResultDto(false, "Selected subject was not found.");
-            }
-        }
-
         var user = new User
         {
             FullName = request.FullName.Trim(),
@@ -148,40 +132,100 @@ public sealed class UserManagementService : IUserManagementService
 
         if (normalizedRole == UserRoles.Teacher)
         {
-            Teacher? teacher = await _context.Teachers
-                .FirstOrDefaultAsync(t => t.Email != null && t.Email.ToLower() == normalizedEmail, cancellationToken);
+            bool teacherProfileExists = await _context.Teachers
+                .AnyAsync(t => t.Email != null && t.Email.ToLower() == normalizedEmail, cancellationToken);
 
-            if (teacher is null)
+            if (!teacherProfileExists)
             {
-                teacher = new Teacher
+                _context.Teachers.Add(new Teacher
                 {
                     TeacherId = Guid.NewGuid(),
                     FullName = user.FullName,
                     Email = normalizedEmail,
                     Department = string.IsNullOrWhiteSpace(request.Department) ? null : request.Department.Trim()
-                };
-                _context.Teachers.Add(teacher);
-            }
-
-            bool assignmentExists = await _context.TeacherSubjects
-                .AnyAsync(
-                    assignment => assignment.TeacherId == teacher.TeacherId
-                        && assignment.SubjectId == assignedSubject!.SubjectId,
-                    cancellationToken);
-            if (!assignmentExists)
-            {
-                _context.TeacherSubjects.Add(new TeacherSubject
-                {
-                    TeacherSubjectId = Guid.NewGuid(),
-                    TeacherId = teacher.TeacherId,
-                    SubjectId = assignedSubject!.SubjectId,
-                    IsHeadOfDepartment = request.IsHeadOfDepartment
                 });
             }
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return new CreateManagedUserResultDto(true, null);
+    }
+
+    public async Task<AssignTeacherSubjectResultDto> AssignTeacherSubjectAsync(
+        AssignTeacherSubjectDto request,
+        CancellationToken cancellationToken = default)
+    {
+        User? user = await _context.Users
+            .FirstOrDefaultAsync(u => u.UserId == request.UserId, cancellationToken);
+
+        if (user is null)
+        {
+            return new AssignTeacherSubjectResultDto(false, "Account was not found.");
+        }
+
+        if (!string.Equals(user.Role, UserRoles.Teacher, StringComparison.OrdinalIgnoreCase))
+        {
+            return new AssignTeacherSubjectResultDto(false, "Only teacher accounts can be assigned a subject.");
+        }
+
+        Subject? subject = await _context.Subjects
+            .FirstOrDefaultAsync(s => s.SubjectId == request.SubjectId, cancellationToken);
+        if (subject is null)
+        {
+            return new AssignTeacherSubjectResultDto(false, "Selected subject was not found.");
+        }
+
+        string normalizedEmail = user.Email.ToLowerInvariant();
+        Teacher? teacher = await _context.Teachers
+            .FirstOrDefaultAsync(t => t.Email != null && t.Email.ToLower() == normalizedEmail, cancellationToken);
+
+        if (teacher is null)
+        {
+            teacher = new Teacher
+            {
+                TeacherId = Guid.NewGuid(),
+                FullName = user.FullName,
+                Email = normalizedEmail
+            };
+            _context.Teachers.Add(teacher);
+        }
+
+        if (request.IsHeadOfDepartment)
+        {
+            // A subject may have many teachers, but only one head of department at a time.
+            List<TeacherSubject> otherHeads = await _context.TeacherSubjects
+                .Where(a => a.SubjectId == subject.SubjectId
+                    && a.TeacherId != teacher.TeacherId
+                    && a.IsHeadOfDepartment)
+                .ToListAsync(cancellationToken);
+
+            foreach (TeacherSubject otherHead in otherHeads)
+            {
+                otherHead.IsHeadOfDepartment = false;
+            }
+        }
+
+        TeacherSubject? assignment = await _context.TeacherSubjects
+            .FirstOrDefaultAsync(a => a.TeacherId == teacher.TeacherId, cancellationToken);
+
+        if (assignment is null)
+        {
+            _context.TeacherSubjects.Add(new TeacherSubject
+            {
+                TeacherSubjectId = Guid.NewGuid(),
+                TeacherId = teacher.TeacherId,
+                SubjectId = subject.SubjectId,
+                IsHeadOfDepartment = request.IsHeadOfDepartment
+            });
+        }
+        else
+        {
+            assignment.SubjectId = subject.SubjectId;
+            assignment.IsHeadOfDepartment = request.IsHeadOfDepartment;
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        return new AssignTeacherSubjectResultDto(true, null);
     }
 
     public async Task<StudentAccountImportResultDto> ImportStudentAccountsAsync(

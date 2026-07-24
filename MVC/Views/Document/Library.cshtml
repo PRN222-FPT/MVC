@@ -111,6 +111,10 @@
                                 </td>
                                 <td class="py-3" data-status-cell>
                                     <span class="status-badge @document.StatusBadgeClass text-capitalize" data-status-badge>@document.Status</span>
+                                    <div class="progress mt-1 @(isTerminalStatus ? "d-none" : "")" style="height: 4px; width: 120px;" data-progress-track>
+                                        <div class="progress-bar" role="progressbar" style="width: 0%" data-progress-bar></div>
+                                    </div>
+                                    <div class="text-secondary @(isTerminalStatus ? "d-none" : "")" style="font-size: 11px;" data-stage-label></div>
                                 </td>
                                 <td class="py-3 text-end">
                                     <div class="d-inline-flex align-items-center gap-2">
@@ -118,6 +122,17 @@
                                             <span class="material-icons" style="font-size: 18px;">visibility</span>
                                             View
                                         </a>
+                                        @{
+                                            bool isProcessedStatus = document.Status.Equals("completed", StringComparison.OrdinalIgnoreCase)
+                                                || document.Status.Equals("processed", StringComparison.OrdinalIgnoreCase);
+                                        }
+                                        @if (isProcessedStatus)
+                                        {
+                                            <a asp-action="Chunks" asp-route-documentId="@document.DocumentId" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1">
+                                                <span class="material-icons" style="font-size: 18px;">view_list</span>
+                                                Chunks
+                                            </a>
+                                        }
                                         <a asp-action="Download" asp-route-documentId="@document.DocumentId" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1">
                                             <span class="material-icons" style="font-size: 18px;">download</span>
                                             Download
@@ -148,70 +163,86 @@
                 return;
             }
 
-            const statusesUrl = '@Url.Action("Statuses", "Document")';
-            const pollIntervalMs = 2500;
-            let timerId = null;
-            let requestInFlight = false;
-
-            const hasActiveRows = () =>
-                Array.from(rows.values()).some(row => row.dataset.terminal !== 'true');
-
-            const scheduleNextPoll = () => {
-                if (timerId !== null || !hasActiveRows()) {
-                    return;
+            const statusBadgeClass = status => {
+                switch ((status || '').toLowerCase()) {
+                    case 'completed':
+                    case 'processed':
+                        return 'bg-success-subtle text-success';
+                    case 'failed':
+                        return 'bg-danger-subtle text-danger';
+                    case 'processing':
+                        return 'bg-info-subtle text-info';
+                    case 'queued':
+                        return 'bg-warning-subtle text-warning';
+                    default:
+                        return 'bg-primary-subtle text-primary';
                 }
-
-                timerId = window.setTimeout(pollStatuses, pollIntervalMs);
             };
 
-            const updateRow = status => {
-                const row = rows.get(status.documentId);
-                if (!row) {
-                    return;
-                }
+            const isTerminalStatus = status => {
+                const s = (status || '').toLowerCase();
+                return s === 'completed' || s === 'processed' || s === 'failed';
+            };
 
+            const applyStatus = (row, status, badgeClass, terminal, progressPercent, stageLabel) => {
                 const badge = row.querySelector('[data-status-badge]');
-                if (!badge) {
-                    return;
+                if (badge) {
+                    badge.className = `status-badge ${badgeClass} text-capitalize`;
+                    badge.textContent = status;
                 }
 
-                badge.className = `status-badge ${status.statusBadgeClass} text-capitalize`;
-                badge.textContent = status.status;
-                row.dataset.terminal = status.isTerminal ? 'true' : 'false';
+                const track = row.querySelector('[data-progress-track]');
+                const bar = row.querySelector('[data-progress-bar]');
+                const label = row.querySelector('[data-stage-label]');
+                if (track && bar && label) {
+                    track.classList.toggle('d-none', terminal);
+                    label.classList.toggle('d-none', terminal);
+                    if (typeof progressPercent === 'number') {
+                        bar.style.width = `${progressPercent}%`;
+                    }
+                    label.textContent = stageLabel || '';
+                }
+
+                row.dataset.terminal = terminal ? 'true' : 'false';
             };
 
-            const pollStatuses = async () => {
-                timerId = null;
-                if (requestInFlight || !hasActiveRows()) {
-                    return;
-                }
-
-                requestInFlight = true;
+            // One-time reconcile: catches any status change that happened between page
+            // render and the SignalR handshake completing.
+            const reconcileOnce = async () => {
                 try {
-                    const response = await fetch(statusesUrl, {
+                    const response = await fetch('@Url.Action("Statuses", "Document")', {
                         method: 'GET',
                         credentials: 'same-origin',
                         cache: 'no-store'
                     });
-
                     if (!response.ok) {
-                        scheduleNextPoll();
                         return;
                     }
-
                     const statuses = await response.json();
-                    statuses.forEach(updateRow);
+                    statuses.forEach(status => {
+                        const row = rows.get(status.documentId);
+                        if (row) {
+                            applyStatus(row, status.status, status.statusBadgeClass, status.isTerminal);
+                        }
+                    });
                 } catch {
-                    scheduleNextPoll();
-                    return;
-                } finally {
-                    requestInFlight = false;
+                    // Best-effort only — live SignalR updates remain the source of truth.
                 }
-
-                scheduleNextPoll();
             };
 
-            scheduleNextPoll();
+            const subscriptions = Array.from(rows.entries())
+                .filter(([, row]) => row.dataset.terminal !== 'true')
+                .map(([documentId, row]) => window.DocumentProcessingHub.subscribe(documentId, update => {
+                    applyStatus(
+                        row,
+                        update.status,
+                        statusBadgeClass(update.status),
+                        isTerminalStatus(update.status),
+                        update.progressPercent,
+                        update.stageLabel);
+                }));
+
+            Promise.all(subscriptions).then(reconcileOnce);
         })();
     </script>
 }

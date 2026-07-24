@@ -21,7 +21,7 @@ public sealed record RetrievalResult(
 public interface IRetrievalService
 {
     /// <summary>
-    /// Embeds the search query, performs a vector search against Qdrant (top-10),
+    /// Embeds the search query, performs a pgvector similarity search (top-30),
     /// filters results based on similarity threshold (>= 0.60), and returns the top-5.
     /// </summary>
     /// <param name="query">The search query/question.</param>

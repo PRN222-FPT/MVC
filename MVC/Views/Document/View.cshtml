@@ -1,4 +1,5 @@
 @model MVC.ViewModels.DocumentViewerViewModel
+@using ServiceLayer.DTOs
 
 @{
     ViewData["Title"] = Model.Title;
@@ -13,10 +14,38 @@
         <a asp-action="Library" class="btn btn-outline-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
             <span class="material-icons">library_books</span> Back to Library
         </a>
+        @if (User.IsInRole(UserRoles.Teacher))
+        {
+            <a asp-action="Chunks" asp-route-documentId="@Model.DocumentId"
+               class="btn btn-outline-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold @(Model.IsCompleted ? "" : "d-none")"
+               data-view-chunks-link>
+                <span class="material-icons">view_list</span> View Chunks
+            </a>
+        }
         <a href="@Model.DownloadUrl" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
             <span class="material-icons">download</span> Download
         </a>
     </div>
+</div>
+
+<div class="mb-4" data-processing-banner data-document-id="@Model.DocumentId" data-terminal="@Model.IsTerminal.ToString().ToLowerInvariant()">
+    @if (!Model.IsCompleted)
+    {
+        <div class="alert @(Model.Status.Equals("failed", StringComparison.OrdinalIgnoreCase) ? "alert-danger" : "alert-info") d-flex flex-column gap-2 mb-0" data-banner-alert>
+            <div class="d-flex align-items-center justify-content-between">
+                <span class="fw-semibold" data-banner-message>
+                    @(Model.Status.Equals("failed", StringComparison.OrdinalIgnoreCase)
+                        ? "Processing failed."
+                        : "Processing this document — parsing, chunking, and embedding for AI search.")
+                </span>
+                <span class="status-badge @Model.StatusBadgeClass text-capitalize" data-status-badge>@Model.Status</span>
+            </div>
+            <div class="progress @(Model.IsTerminal ? "d-none" : "")" style="height: 6px;" data-progress-track>
+                <div class="progress-bar" role="progressbar" style="width: 0%" data-progress-bar></div>
+            </div>
+            <div class="text-secondary small @(Model.IsTerminal ? "d-none" : "")" data-stage-label></div>
+        </div>
+    }
 </div>
 
 <div class="card border-light shadow-sm rounded-4 overflow-hidden">
@@ -38,3 +67,75 @@
         }
     </div>
 </div>
+
+@section Scripts {
+    <script>
+        (() => {
+            const banner = document.querySelector('[data-processing-banner]');
+            if (!banner || banner.dataset.terminal === 'true') {
+                return;
+            }
+
+            const documentId = banner.dataset.documentId;
+            const alertBox = banner.querySelector('[data-banner-alert]');
+            const badge = banner.querySelector('[data-status-badge]');
+            const message = banner.querySelector('[data-banner-message]');
+            const track = banner.querySelector('[data-progress-track]');
+            const bar = banner.querySelector('[data-progress-bar]');
+            const label = banner.querySelector('[data-stage-label]');
+            const viewChunksLink = document.querySelector('[data-view-chunks-link]');
+
+            const statusBadgeClass = status => {
+                switch ((status || '').toLowerCase()) {
+                    case 'completed':
+                    case 'processed':
+                        return 'bg-success-subtle text-success';
+                    case 'failed':
+                        return 'bg-danger-subtle text-danger';
+                    case 'processing':
+                        return 'bg-info-subtle text-info';
+                    case 'queued':
+                        return 'bg-warning-subtle text-warning';
+                    default:
+                        return 'bg-primary-subtle text-primary';
+                }
+            };
+
+            window.DocumentProcessingHub.subscribe(documentId, update => {
+                const status = (update.status || '').toLowerCase();
+                const isCompleted = status === 'completed' || status === 'processed';
+                const isFailed = status === 'failed';
+                const isTerminal = isCompleted || isFailed;
+
+                if (badge) {
+                    badge.className = `status-badge ${statusBadgeClass(update.status)} text-capitalize`;
+                    badge.textContent = update.status;
+                }
+
+                if (isCompleted) {
+                    alertBox.classList.remove('alert-info', 'alert-danger');
+                    alertBox.classList.add('alert-success');
+                    message.textContent = 'Processing complete — this document is ready for AI search.';
+                    if (viewChunksLink) {
+                        viewChunksLink.classList.remove('d-none');
+                    }
+                } else if (isFailed) {
+                    alertBox.classList.remove('alert-info', 'alert-success');
+                    alertBox.classList.add('alert-danger');
+                    message.textContent = update.errorMessage
+                        ? `Processing failed: ${update.errorMessage}`
+                        : 'Processing failed.';
+                } else if (typeof update.progressPercent === 'number') {
+                    bar.style.width = `${update.progressPercent}%`;
+                    label.textContent = update.stageLabel || '';
+                }
+
+                if (isTerminal) {
+                    track.classList.add('d-none');
+                    label.classList.add('d-none');
+                    banner.dataset.terminal = 'true';
+                }
+            });
+        })();
+    </script>
+}

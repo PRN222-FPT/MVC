@@ -54,3 +54,6 @@ uploads/
 
 # Temporary build/output directories
 .tmp/
+
+# Docker Compose secrets
+.env

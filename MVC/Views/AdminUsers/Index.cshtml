@@ -100,28 +100,62 @@
 
                     <div>
                         <label asp-for="CreateUser.Department" class="form-label small fw-bold text-secondary">Department</label>
-                        <input asp-for="CreateUser.Department" class="form-control" placeholder="Required for teacher profiles" />
+                        <input asp-for="CreateUser.Department" class="form-control" placeholder="Optional, teacher profiles only" />
                         <span asp-validation-for="CreateUser.Department" class="text-danger small"></span>
                     </div>
 
-                    <div>
-                        <label asp-for="CreateUser.SubjectId" class="form-label small fw-bold text-secondary">Teacher Subject</label>
-                        <select asp-for="CreateUser.SubjectId" asp-items="Model.SubjectOptions" class="form-select">
-                            <option value="">Select when role is Teacher</option>
-                        </select>
-                        <span asp-validation-for="CreateUser.SubjectId" class="text-danger small"></span>
-                    </div>
-
-                    <div class="form-check">
-                        <input asp-for="CreateUser.IsHeadOfDepartment" class="form-check-input" />
-                        <label asp-for="CreateUser.IsHeadOfDepartment" class="form-check-label small fw-semibold">
-                            Head of Department
-                        </label>
+                    <div class="small text-secondary">
+                        Teacher accounts are created without a subject. Assign one afterwards below.
                     </div>
 
                     <button type="submit" class="btn btn-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2">
                         <span class="material-icons" style="font-size: 20px;">add</span>
                         Create Account
+                    </button>
+                </form>
+            </div>
+
+            <div class="bg-white border rounded-3 p-4 mb-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="material-icons text-primary">assignment_ind</span>
+                    <h2 class="h5 fw-bold mb-0">Assign Subject</h2>
+                </div>
+
+                <form asp-action="AssignSubject" method="post" class="d-flex flex-column gap-3">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+                    <div>
+                        <label asp-for="AssignTeacherSubject.UserId" class="form-label small fw-bold text-secondary">Teacher</label>
+                        <select asp-for="AssignTeacherSubject.UserId" asp-items="Model.TeacherOptions" class="form-select">
+                            <option value="">Select a teacher</option>
+                        </select>
+                        <span asp-validation-for="AssignTeacherSubject.UserId" class="text-danger small"></span>
+                    </div>
+
+                    <div>
+                        <label asp-for="AssignTeacherSubject.SubjectId" class="form-label small fw-bold text-secondary">Subject</label>
+                        <select asp-for="AssignTeacherSubject.SubjectId" asp-items="Model.SubjectOptions" class="form-select">
+                            <option value="">Select a subject</option>
+                        </select>
+                        <span asp-validation-for="AssignTeacherSubject.SubjectId" class="text-danger small"></span>
+                    </div>
+
+                    <div class="form-check">
+                        <input asp-for="AssignTeacherSubject.IsHeadOfDepartment" class="form-check-input" />
+                        <label asp-for="AssignTeacherSubject.IsHeadOfDepartment" class="form-check-label small fw-semibold">
+                            Head of Department
+                        </label>
+                    </div>
+
+                    <div class="small text-secondary">
+                        A subject can have many teachers, but only one head of department. Marking a new head
+                        automatically removes the head badge from the previous one.
+                    </div>
+
+                    <button type="submit" class="btn btn-outline-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                        <span class="material-icons" style="font-size: 20px;">how_to_reg</span>
+                        Assign Subject
                     </button>
                 </form>
             </div>

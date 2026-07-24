@@ -62,7 +62,8 @@ public sealed record DocumentFileDto(
     string FileName,
     string FileType,
     string ContentType,
-    Stream Content);
+    Stream Content,
+    string Status);
 
 /// <summary>
 /// Represents a structured chunk of document text.
@@ -71,4 +72,18 @@ public sealed record ChunkDto(
     int PageNumber,
     int ChunkIndex,
     string Content
+);
+
+public sealed record DocumentChunkDto(
+    Guid ChunkId,
+    int ChunkIndex,
+    string Content,
+    DateTime? CreatedAt
+);
+
+public sealed record DocumentChunksResultDto(
+    Guid DocumentId,
+    string Title,
+    string Status,
+    IReadOnlyList<DocumentChunkDto> Chunks
 );
