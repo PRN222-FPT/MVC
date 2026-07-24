@@ -6,6 +6,7 @@ WHERE NOT EXISTS (
 \c prn222
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "vector";
 
 CREATE TABLE "benchmark_results" (
 	"result_id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -34,7 +35,15 @@ CREATE TABLE "chunks" (
 	"document_id" uuid NOT NULL,
 	"chunk_index" integer NOT NULL,
 	"content" text NOT NULL,
-	"created_at" timestamp DEFAULT CURRENT_TIMESTAMP
+	"created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
+	"embedding" vector(3072)
+);
+CREATE TABLE "chunking_settings" (
+	"id" smallint PRIMARY KEY DEFAULT 1,
+	"chunk_size_characters" integer NOT NULL DEFAULT 1400,
+	"updated_at" timestamp DEFAULT CURRENT_TIMESTAMP,
+	"updated_by" uuid,
+	CONSTRAINT "chunking_settings_singleton" CHECK ("id" = 1)
 );
 CREATE TABLE "documents" (
 	"document_id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -79,7 +88,7 @@ CREATE TABLE "subjects" (
 CREATE TABLE "teacher_subjects" (
 	"teacher_subject_id" uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
 	"teacher_id" uuid NOT NULL UNIQUE,
-	"subject_id" uuid NOT NULL UNIQUE,
+	"subject_id" uuid NOT NULL,
 	"is_head_of_department" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp DEFAULT CURRENT_TIMESTAMP,
 	CONSTRAINT "teacher_subjects_teacher_subject_key" UNIQUE("teacher_id","subject_id")
@@ -108,44 +117,36 @@ CREATE TABLE "users" (
 	"is_blocked" boolean DEFAULT false NOT NULL,
 	"student_code" varchar(50)
 );
-CREATE UNIQUE INDEX "PK___EFMigrationsHistory" ON "__EFMigrationsHistory" ("MigrationId");
-CREATE UNIQUE INDEX "benchmark_results_pkey" ON "benchmark_results" ("result_id");
 CREATE INDEX "IX_benchmark_results_benchmark_run_id" ON "benchmark_results" ("benchmark_run_id");
 CREATE INDEX "IX_benchmark_results_question_id" ON "benchmark_results" ("question_id");
-CREATE UNIQUE INDEX "benchmark_runs_pkey" ON "benchmark_runs" ("benchmark_run_id");
 CREATE INDEX "IX_benchmark_runs_executed_by" ON "benchmark_runs" ("executed_by");
-CREATE UNIQUE INDEX "chapters_pkey" ON "chapters" ("chapter_id");
 CREATE INDEX "idx_chapters_subject" ON "chapters" ("subject_id");
-CREATE UNIQUE INDEX "chunks_pkey" ON "chunks" ("chunk_id");
 CREATE INDEX "idx_chunks_document" ON "chunks" ("document_id");
-CREATE UNIQUE INDEX "documents_pkey" ON "documents" ("document_id");
+-- No ANN index on "embedding": pgvector's hnsw/ivfflat indexes cap at 2000 dimensions,
+-- and this column is vector(3072). Searches do an exact (brute-force) cosine scan, which
+-- is accurate rather than approximate and is fast enough at this project's data scale.
+-- If chunk volume grows into the tens of thousands+, revisit via halfvec(3072) (supports
+-- up to 4000 dims) or a smaller embedding OutputDimensionality.
 CREATE INDEX "idx_documents_chapter" ON "documents" ("chapter_id");
 CREATE INDEX "idx_documents_subject" ON "documents" ("subject_id");
 CREATE INDEX "IX_documents_uploaded_by" ON "documents" ("uploaded_by");
 CREATE INDEX "IX_documents_uploaded_teacher" ON "documents" ("uploaded_teacher");
 CREATE INDEX "idx_messages_session" ON "messages" ("session_id");
-CREATE UNIQUE INDEX "messages_pkey" ON "messages" ("message_id");
 CREATE INDEX "idx_processing_document" ON "processing_jobs" ("document_id");
-CREATE UNIQUE INDEX "processing_jobs_pkey" ON "processing_jobs" ("job_id");
 CREATE INDEX "IX_sessions_user_id" ON "sessions" ("user_id");
-CREATE UNIQUE INDEX "sessions_pkey" ON "sessions" ("session_id");
-CREATE UNIQUE INDEX "subjects_pkey" ON "subjects" ("subject_id");
 CREATE UNIQUE INDEX "subjects_subject_code_key" ON "subjects" ("subject_code");
 CREATE INDEX "idx_teacher_subjects_subject" ON "teacher_subjects" ("subject_id");
 CREATE INDEX "idx_teacher_subjects_teacher" ON "teacher_subjects" ("teacher_id");
-CREATE UNIQUE INDEX "teacher_subjects_pkey" ON "teacher_subjects" ("teacher_subject_id");
-CREATE UNIQUE INDEX "teacher_subjects_teacher_subject_key" ON "teacher_subjects" ("teacher_id","subject_id");
+CREATE UNIQUE INDEX "teacher_subjects_one_head_per_subject" ON "teacher_subjects" ("subject_id") WHERE "is_head_of_department";
 CREATE UNIQUE INDEX "teachers_email_key" ON "teachers" ("email");
-CREATE UNIQUE INDEX "teachers_pkey" ON "teachers" ("teacher_id");
 CREATE INDEX "idx_questions_chapter" ON "test_questions" ("chapter_id");
-CREATE UNIQUE INDEX "test_questions_pkey" ON "test_questions" ("question_id");
 CREATE UNIQUE INDEX "users_email_key" ON "users" ("email");
-CREATE UNIQUE INDEX "users_pkey" ON "users" ("user_id");
 CREATE UNIQUE INDEX "users_student_code_key" ON "users" ("student_code");
 ALTER TABLE "benchmark_results" ADD CONSTRAINT "fk_result_question" FOREIGN KEY ("question_id") REFERENCES "test_questions"("question_id") ON DELETE SET NULL;
 ALTER TABLE "benchmark_results" ADD CONSTRAINT "fk_result_run" FOREIGN KEY ("benchmark_run_id") REFERENCES "benchmark_runs"("benchmark_run_id") ON DELETE CASCADE;
 ALTER TABLE "benchmark_runs" ADD CONSTRAINT "fk_benchmark_user" FOREIGN KEY ("executed_by") REFERENCES "users"("user_id") ON DELETE SET NULL;
 ALTER TABLE "chapters" ADD CONSTRAINT "fk_chapter_subject" FOREIGN KEY ("subject_id") REFERENCES "subjects"("subject_id") ON DELETE CASCADE;
+ALTER TABLE "chunking_settings" ADD CONSTRAINT "fk_chunking_settings_user" FOREIGN KEY ("updated_by") REFERENCES "users"("user_id") ON DELETE SET NULL;
 ALTER TABLE "chunks" ADD CONSTRAINT "fk_chunk_document" FOREIGN KEY ("document_id") REFERENCES "documents"("document_id") ON DELETE CASCADE;
 ALTER TABLE "documents" ADD CONSTRAINT "fk_document_chapter" FOREIGN KEY ("chapter_id") REFERENCES "chapters"("chapter_id") ON DELETE CASCADE;
 ALTER TABLE "documents" ADD CONSTRAINT "fk_document_subject" FOREIGN KEY ("subject_id") REFERENCES "subjects"("subject_id");
@@ -157,3 +158,7 @@ ALTER TABLE "sessions" ADD CONSTRAINT "fk_session_user" FOREIGN KEY ("user_id") 
 ALTER TABLE "teacher_subjects" ADD CONSTRAINT "fk_teacher_subject_subject" FOREIGN KEY ("subject_id") REFERENCES "subjects"("subject_id") ON DELETE CASCADE;
 ALTER TABLE "teacher_subjects" ADD CONSTRAINT "fk_teacher_subject_teacher" FOREIGN KEY ("teacher_id") REFERENCES "teachers"("teacher_id") ON DELETE CASCADE;
 ALTER TABLE "test_questions" ADD CONSTRAINT "fk_question_chapter" FOREIGN KEY ("chapter_id") REFERENCES "chapters"("chapter_id") ON DELETE CASCADE;
+
+INSERT INTO "chunking_settings" ("id", "chunk_size_characters")
+VALUES (1, 1400)
+ON CONFLICT ("id") DO NOTHING;

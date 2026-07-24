@@ -1,0 +1,72 @@
+@model MVC.ViewModels.ChunkingSettingsIndexViewModel
+
+@{
+    ViewData["Title"] = "Chunking Settings";
+}
+
+<div class="d-flex flex-column gap-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+        <div>
+            <p class="text-secondary fw-bold text-uppercase mb-1" style="font-size: 11px; letter-spacing: .08em;">Admin Console</p>
+            <h1 class="h3 fw-bold mb-1">Chunking Settings</h1>
+            <p class="text-secondary mb-0">Set the fixed chunk size (in characters) used when documents teachers upload are split for embedding.</p>
+        </div>
+    </div>
+
+    @if (TempData["Success"] is string success)
+    {
+        <div class="alert alert-success mb-0">@success</div>
+    }
+    @if (TempData["Error"] is string error)
+    {
+        <div class="alert alert-danger mb-0">@error</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-xl-5">
+            <div class="bg-white border rounded-3 p-4">
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <span class="material-icons text-primary">content_cut</span>
+                    <h2 class="h5 fw-bold mb-0">Fixed Chunk Size</h2>
+                </div>
+
+                <form asp-action="Update" method="post" class="d-flex flex-column gap-3">
+                    @Html.AntiForgeryToken()
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger py-2 small"></div>
+
+                    <div>
+                        <label asp-for="UpdateChunkSize.ChunkSizeCharacters" class="form-label small fw-bold text-secondary">Chunk Size (characters)</label>
+                        <input asp-for="UpdateChunkSize.ChunkSizeCharacters" class="form-control" type="number" min="100" max="8000" placeholder="1400" />
+                        <span asp-validation-for="UpdateChunkSize.ChunkSizeCharacters" class="text-danger small"></span>
+                        <div class="form-text">Text is cut every N characters with no overlap. Applies to documents uploaded after saving.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary fw-bold d-inline-flex align-items-center justify-content-center gap-2">
+                        <span class="material-icons" style="font-size: 20px;">save</span>
+                        Save Chunk Size
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-xl-7">
+            <div class="bg-white border rounded-3 p-4">
+                <h2 class="h5 fw-bold mb-3">Current Setting</h2>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-secondary small">Chunk size</dt>
+                    <dd class="col-sm-8 fw-bold">@Model.CurrentChunkSizeCharacters characters</dd>
+
+                    <dt class="col-sm-4 text-secondary small">Last updated</dt>
+                    <dd class="col-sm-8">@(Model.UpdatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "Never")</dd>
+
+                    <dt class="col-sm-4 text-secondary small">Updated by</dt>
+                    <dd class="col-sm-8">@(Model.UpdatedByName ?? "System default")</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

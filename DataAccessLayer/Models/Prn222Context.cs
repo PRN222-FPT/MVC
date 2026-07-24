@@ -21,6 +21,8 @@ public partial class Prn222Context : DbContext
 
     public virtual DbSet<Chapter> Chapters { get; set; }
 
+    public virtual DbSet<ChunkingSetting> ChunkingSettings { get; set; }
+
     public virtual DbSet<Chunk> Chunks { get; set; }
 
     public virtual DbSet<Document> Documents { get; set; }
@@ -138,6 +140,30 @@ public partial class Prn222Context : DbContext
                 .HasConstraintName("fk_chapter_subject");
         });
 
+        modelBuilder.Entity<ChunkingSetting>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("chunking_settings_pkey");
+
+            entity.ToTable("chunking_settings", t => t.HasCheckConstraint("chunking_settings_singleton", "id = 1"));
+
+            entity.Property(e => e.Id)
+                .HasDefaultValue((short)1)
+                .HasColumnName("id");
+            entity.Property(e => e.ChunkSizeCharacters)
+                .HasDefaultValue(1400)
+                .HasColumnName("chunk_size_characters");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("timestamp without time zone")
+                .HasColumnName("updated_at");
+            entity.Property(e => e.UpdatedBy).HasColumnName("updated_by");
+
+            entity.HasOne(d => d.UpdatedByNavigation).WithMany(p => p.ChunkingSettings)
+                .HasForeignKey(d => d.UpdatedBy)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_chunking_settings_user");
+        });
+
         modelBuilder.Entity<Chunk>(entity =>
         {
             entity.HasKey(e => e.ChunkId).HasName("chunks_pkey");
@@ -156,6 +182,9 @@ public partial class Prn222Context : DbContext
                 .HasColumnType("timestamp without time zone")
                 .HasColumnName("created_at");
             entity.Property(e => e.DocumentId).HasColumnName("document_id");
+            entity.Property(e => e.Embedding)
+                .HasColumnType("vector(3072)")
+                .HasColumnName("embedding");
 
             entity.HasOne(d => d.Document).WithMany(p => p.Chunks)
                 .HasForeignKey(d => d.DocumentId)
@@ -325,6 +354,9 @@ public partial class Prn222Context : DbContext
             entity.HasIndex(e => new { e.TeacherId, e.SubjectId }, "teacher_subjects_teacher_subject_key").IsUnique();
             entity.HasIndex(e => e.SubjectId, "idx_teacher_subjects_subject");
             entity.HasIndex(e => e.TeacherId, "idx_teacher_subjects_teacher");
+            entity.HasIndex(e => e.SubjectId, "teacher_subjects_one_head_per_subject")
+                .IsUnique()
+                .HasFilter("is_head_of_department");
 
             entity.Property(e => e.TeacherSubjectId)
                 .HasDefaultValueSql("uuid_generate_v4()")
