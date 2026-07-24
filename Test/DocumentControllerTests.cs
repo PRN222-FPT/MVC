@@ -202,7 +202,19 @@ public sealed class DocumentControllerTests
                 "lecture-notes.pdf",
                 "pdf",
                 "application/pdf",
-                new MemoryStream([1, 2, 3])));
+                new MemoryStream([1, 2, 3]),
+                "completed"));
+        }
+
+        public Task<DocumentChunksResultDto> GetDocumentChunksAsync(
+            Guid documentId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new DocumentChunksResultDto(
+                documentId,
+                "Lecture Notes",
+                "completed",
+                []));
         }
 
         public Task<UploadDocumentResult> InitiateUploadAsync(

@@ -6,9 +6,9 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
+using MVC.Hubs;
 using MVC.Middlewares;
 using MVC.Workers;
-using Qdrant.Client;
 using Serilog;
 using Serilog.Events;
 using ServiceLayer.DTOs;
@@ -34,13 +34,15 @@ try
     var builder = WebApplication.CreateBuilder(args);
     builder.Configuration.Sources.Clear();
     builder.Configuration
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+        .AddEnvironmentVariables();
 
     // ----- Logging: route all ASP.NET Core logging through Serilog -----
     builder.Host.UseSerilog();
 
     // ----- MVC + API controllers -----
     builder.Services.AddControllersWithViews();
+    builder.Services.AddSignalR();
 
     builder.Services
         .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
@@ -83,7 +85,7 @@ try
     }
 
     builder.Services.AddDbContext<Prn222Context>(options =>
-        options.UseNpgsql(connectionString));
+        options.UseNpgsql(connectionString, npgsqlOptions => npgsqlOptions.UseVector()));
 
     // ----- Repositories -----
     builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
@@ -98,8 +100,8 @@ try
         builder.Configuration.GetSection(ChunkingOptions.SectionName));
     builder.Services.Configure<OcrOptions>(
         builder.Configuration.GetSection(OcrOptions.SectionName));
-    builder.Services.Configure<QdrantOptions>(
-        builder.Configuration.GetSection(QdrantOptions.SectionName));
+    builder.Services.Configure<VectorStoreOptions>(
+        builder.Configuration.GetSection(VectorStoreOptions.SectionName));
     builder.Services.Configure<GeminiOptions>(
         builder.Configuration.GetSection(GeminiOptions.SectionName));
     builder.Services.Configure<SmtpOptions>(
@@ -113,9 +115,11 @@ try
     builder.Services.AddScoped<IDocumentService, DocumentService>();
     builder.Services.AddScoped<IDocumentProcessor, DocumentProcessor>();
     builder.Services.AddScoped<IRecursiveChunkingService, RecursiveChunkingService>();
+    builder.Services.AddScoped<IFixedSizeChunkingService, FixedSizeChunkingService>();
+    builder.Services.AddScoped<IChunkingSettingsService, ChunkingSettingsService>();
     if (string.IsNullOrWhiteSpace(geminiApiKey))
     {
-        Log.Warning("Gemini:ApiKey is not configured. Document processing will fail fast before Qdrant upsert.");
+        Log.Warning("Gemini:ApiKey is not configured. Document processing will fail fast before embeddings are saved.");
         builder.Services.AddScoped<IEmbeddingService, NoOpEmbeddingService>();
     }
     else
@@ -134,17 +138,8 @@ try
     builder.Services.AddScoped<ICitationService, CitationService>();
     builder.Services.AddScoped<ISubjectService, SubjectService>();
 
-    // ----- Qdrant Vector DB services -----
-    builder.Services.AddSingleton<QdrantClient>(sp =>
-    {
-        var options = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
-        if (!string.IsNullOrEmpty(options.ApiKey))
-        {
-            return new QdrantClient(host: options.Host, port: options.Port, https: options.Https, apiKey: options.ApiKey);
-        }
-        return new QdrantClient(host: options.Host, port: options.Port, https: options.Https);
-    });
-    builder.Services.AddScoped<IQdrantService, QdrantService>();
+    // ----- pgvector similarity search -----
+    builder.Services.AddScoped<IVectorSearchService, PgVectorService>();
 
     // ----- Gemini-compatible chat services -----
     if (chatProvider.Equals(GeminiChatProviders.OpenRouter, StringComparison.OrdinalIgnoreCase))
@@ -178,6 +173,7 @@ try
             builder.Environment.ContentRootPath));
     builder.Services.AddSingleton<IBackgroundTaskQueue, BackgroundTaskQueue>();
     builder.Services.AddHostedService<DocumentProcessingWorker>();
+    builder.Services.AddSingleton<IDocumentProcessingNotifier, SignalRDocumentProcessingNotifier>();
 
     var app = builder.Build();
 
@@ -222,6 +218,7 @@ try
     app.UseAuthorization();
     app.MapStaticAssets();
     app.MapControllers();
+    app.MapHub<DocumentProcessingHub>("/hubs/document-processing");
     app.MapControllerRoute(
         name: "default",
         pattern: "{controller=Account}/{action=Login}/{id?}")

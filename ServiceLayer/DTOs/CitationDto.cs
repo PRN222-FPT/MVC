@@ -18,7 +18,7 @@ public sealed class CitationDto
 }
 
 /// <summary>
-/// A chunk returned by the vector store (e.g. Qdrant) together with its similarity score.
+/// A chunk returned by the pgvector similarity search together with its similarity score.
 /// </summary>
 public sealed record RetrievedChunkDto(
     Guid ChunkId,

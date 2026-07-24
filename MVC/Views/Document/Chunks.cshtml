@@ -1,0 +1,67 @@
+@model MVC.ViewModels.DocumentChunksViewModel
+
+@{
+    ViewData["Title"] = $"Chunks - {Model.Title}";
+}
+
+<div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+    <div>
+        <h2 class="display-6 fw-bold mb-1">@Model.Title</h2>
+        <p class="text-secondary mb-0">
+            <span class="status-badge @Model.StatusBadgeClass text-capitalize">@Model.Status</span>
+            <span class="ms-2">@Model.Chunks.Count chunk(s)</span>
+        </p>
+    </div>
+    <div class="d-inline-flex align-items-center gap-2">
+        <a asp-action="Library" class="btn btn-outline-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+            <span class="material-icons">library_books</span> Back to Library
+        </a>
+        <a asp-action="ViewDocument" asp-route-documentId="@Model.DocumentId" class="btn btn-primary d-inline-flex align-items-center gap-2 px-4 py-2 fw-semibold">
+            <span class="material-icons">description</span> View Document
+        </a>
+    </div>
+</div>
+
+@if (!Model.IsCompleted)
+{
+    <div class="card border-light shadow-sm rounded-4 overflow-hidden">
+        <div class="card-body p-5 text-center">
+            <span class="material-icons text-primary mb-3" style="font-size: 48px;">hourglass_top</span>
+            <h3 class="h5 fw-bold">Chunks are not available yet</h3>
+            <p class="text-secondary mb-0">
+                This document is currently <span class="fw-semibold text-capitalize">@Model.Status</span>.
+                Chunks will appear here once processing completes successfully.
+            </p>
+        </div>
+    </div>
+}
+else if (Model.Chunks.Count == 0)
+{
+    <div class="card border-light shadow-sm rounded-4 overflow-hidden">
+        <div class="card-body p-5 text-center">
+            <span class="material-icons text-primary mb-3" style="font-size: 48px;">inbox</span>
+            <h3 class="h5 fw-bold">No chunks were produced</h3>
+            <p class="text-secondary mb-0">This document completed processing but has no stored chunks.</p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="d-flex flex-column gap-3">
+        @foreach (var chunk in Model.Chunks)
+        {
+            <div class="card border-light shadow-sm rounded-4">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <span class="fw-semibold">Chunk #@chunk.ChunkIndex</span>
+                    @if (chunk.CreatedAt.HasValue)
+                    {
+                        <span class="text-secondary small">@chunk.CreatedAt.Value.ToString("MMM d, yyyy HH:mm")</span>
+                    }
+                </div>
+                <div class="card-body">
+                    <pre class="mb-0" style="white-space: pre-wrap; word-break: break-word; font-family: inherit;">@chunk.Content</pre>
+                </div>
+            </div>
+        }
+    </div>
+}
